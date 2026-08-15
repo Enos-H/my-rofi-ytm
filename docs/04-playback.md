@@ -105,6 +105,24 @@ retry.
 > A escolha da flag `--ytdl-format=bestaudio/best` mantém o áudio preferido.
 > `--no-terminal` silencia; para depurar use `--msg-level=all=status` no lugar.
 
+## Conta free (sem Premium): sem anúncios, 128 kbps
+
+O pipeline **nunca toca anúncios**, mesmo sem Premium — os ads do YouTube
+Music são mídia separada, e o yt-dlp expõe **apenas formatos da música**
+(no `-F` não aparecem formatos `ad`/`audio_ad`). O que muda em relação à
+conta Premium:
+
+| Aspecto | Efeito |
+|---|---|
+| Qualidade de áudio | cai para 128 kbps (itag 251/opus ≈ 130 kbps; premium era 256 kbps AAC) |
+| PO Token (bgutil) | funciona igual (é anti-bot, não premium) |
+| Liked / playlists | depende da conta logada (pode vir vazio em conta nova) |
+
+Verificado empiricamente com conta free: `-F` sem formatos de ad,
+`pot=` presente na URL e **3/3 downloads de teste OK** (CDN aceitando o
+token). Se algum dia aparecer anúncio costurado no stream (único cenário
+que quebraria isso), a mitigação seria filtrar formato no `--ytdl-format`.
+
 ## Manutenção
 
 | O que | Como | Quando |

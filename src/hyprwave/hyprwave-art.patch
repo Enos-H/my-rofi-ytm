@@ -1,0 +1,68 @@
+diff --git a/art.c b/art.c
+index 36b672c..2fa25d1 100644
+--- a/art.c
++++ b/art.c
+@@ -25,7 +25,11 @@ GtkWidget* load_album_art_to_container(const gchar *art_url, GtkWidget *containe
+         gchar *file_path = g_filename_from_uri(art_url, NULL, NULL);
+         if (file_path && g_file_test(file_path, G_FILE_TEST_EXISTS)) {
+             GError *error = NULL;
+-            pixbuf = gdk_pixbuf_new_from_file_at_scale(file_path, size, size, FALSE, &error);
++            if (size <= 100) {
++                pixbuf = gdk_pixbuf_new_from_file_at_scale(file_path, size * 2, size * 2, TRUE, &error);
++            } else {
++                pixbuf = gdk_pixbuf_new_from_file(file_path, &error);
++            }
+             if (error) {
+                 g_error_free(error);
+                 pixbuf = NULL;
+@@ -37,7 +41,11 @@ GtkWidget* load_album_art_to_container(const gchar *art_url, GtkWidget *containe
+         GError *error = NULL;
+         GInputStream *stream = G_INPUT_STREAM(g_file_read(file, NULL, &error));
+         if (stream && !error) {
+-            pixbuf = gdk_pixbuf_new_from_stream_at_scale(stream, size, size, FALSE, NULL, &error);
++            if (size <= 100) {
++                pixbuf = gdk_pixbuf_new_from_stream_at_scale(stream, size * 2, size * 2, TRUE, NULL, &error);
++            } else {
++                pixbuf = gdk_pixbuf_new_from_stream(stream, NULL, &error);
++            }
+             if (error) {
+                 g_error_free(error);
+                 pixbuf = NULL;
+@@ -58,14 +66,20 @@ GtkWidget* load_album_art_to_container(const gchar *art_url, GtkWidget *containe
+     // For larger sizes (main widget), add extra layout controls
+     if (size > 100) {
+         gtk_picture_set_can_shrink(GTK_PICTURE(image), TRUE);
+-        gtk_picture_set_content_fit(GTK_PICTURE(image), GTK_CONTENT_FIT_CONTAIN);
++        gtk_picture_set_content_fit(GTK_PICTURE(image), GTK_CONTENT_FIT_COVER);
+         gtk_widget_set_halign(image, GTK_ALIGN_CENTER);
+         gtk_widget_set_valign(image, GTK_ALIGN_CENTER);
+         gtk_widget_set_hexpand(image, FALSE);
+         gtk_widget_set_vexpand(image, FALSE);
+     } else {
+-        // For notifications, use simpler fill approach
++        // For notifications, use cover fit but must allow shrink so the
++        // native-resolution pixbuf scales down to the requested size
++        gtk_picture_set_can_shrink(GTK_PICTURE(image), TRUE);
+         gtk_picture_set_content_fit(GTK_PICTURE(image), GTK_CONTENT_FIT_COVER);
++        gtk_widget_set_halign(image, GTK_ALIGN_CENTER);
++        gtk_widget_set_valign(image, GTK_ALIGN_CENTER);
++        gtk_widget_set_hexpand(image, FALSE);
++        gtk_widget_set_vexpand(image, FALSE);
+     }
+ 
+     // Clear existing art and add new
+diff --git a/notification.c b/notification.c
+index 5815449..7aaf685 100644
+--- a/notification.c
++++ b/notification.c
+@@ -107,6 +107,10 @@ NotificationState* notification_init(GtkApplication *app) {
+     state->album_cover = album_cover;
+     gtk_widget_add_css_class(album_cover, "notification-album");
+     gtk_widget_set_size_request(album_cover, 70, 70);
++    gtk_widget_set_halign(album_cover, GTK_ALIGN_CENTER);
++    gtk_widget_set_valign(album_cover, GTK_ALIGN_CENTER);
++    gtk_widget_set_hexpand(album_cover, FALSE);
++    gtk_widget_set_vexpand(album_cover, FALSE);
+     gtk_widget_set_overflow(album_cover, GTK_OVERFLOW_HIDDEN);
+     
+     // Info panel

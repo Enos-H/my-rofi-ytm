@@ -12,7 +12,9 @@ Tabela sintoma → causa → correção. Ordene pelos itens marcados [frequente]
 | "No auth found. Run refresh_auth.py first" [frequente após limpeza] | `headers_auth.json` inexistente | Rodar `~/.config/rofi/scripts/ytm/refresh_auth.py` uma vez |
 | Busca funciona, mas a notificação diz "Auth error - check Firefox login" | stderr do helper propagado | Ver o stderr direto: `ytm.py search "x"` no terminal |
 | Campo da busca retorna vazio/silencioso (exit 0 sem saída) | Guard `if __name__ == "__main__": main()` removido do ytm.py | Restaurar o guard no fim do arquivo (lição de 06-history) |
-| Error com "authuser" / conta errada nas listas | Conta index diferente no `x-goog-authuser` | Atualizar o `x-goog-authuser` no refresh_auth.py para o index correto |
+| Liked/playlists dizem "Sign in to listen to your liked tracks" | `x-goog-authuser` apontando para sessão inexistente (ex.: trocou de conta no Firefox) | Rodar `refresh_auth.py` (ou usar a opção **🔄 Recarregar Cookies** do menu) — o authuser agora é **autodetectado** (0..4); se persistir, conferir login no youtube.com |
+| Músicas da conta errada com 2+ contas logadas | Os cookies do Firefox valem para todas as contas; quem seleciona é só o header `x-goog-authuser`, e a autodetecção pega a **primeira conta válida** (0..4), que pode não ser a que você quer | Usar **🔄 Recarregar Cookies**: com 2+ contas ele abre um seletor (**•** = preferida, vinda de `account_pref`) e grava a escolha em `account_pref`; quando a conta preferida deixa de existir, volta sozinho para a primeira válida |
+| `refresh_auth.py` manual falha com "No module named 'browser_cookie3'" | Rodado com o python do sistema | Usar o python do venv: `~/.local/share/ytm-venv/bin/python .../refresh_auth.py` (só o venv tem `browser-cookie3`) |
 
 ## Playback (mpv / yt-dlp)
 

@@ -82,13 +82,24 @@ JSON com **chaves minúsculas** (a API do Google as quer assim):
   "authorization": "SAPISIDHASH <token> ...",
   "accept-language": "pt-BR,pt;q=0.9,en;q=0.5",
   "content-type": "application/json",
-  "x-goog-authuser": "2",
+  "x-goog-authuser": "0",
   "x-origin": "https://music.youtube.com",
   "cookie": "<todos os cookies>"
 }
 ```
 
-- `x-goog-authuser: 2` — conta secundária (index 2) usada no navegador;
+- `x-goog-authuser` — índice da conta Google logada (0 = primeira). É
+  **detectado automaticamente** a cada refresh: o script faz **probe de
+  authuser 0..4** (valida cada um com `get_liked_songs` e rotula com
+  `get_account_info`). O endpoint `account/accounts_list` só lista a conta
+  da sessão atual e **não enumera multi-login** — por isso a enumeração é
+  por probe (~5-9s);
+- com **2+ contas logadas** o header define qual conta a API usa — os
+  cookies valem para todas; escolha via **🔄 Recarregar Cookies** do menu,
+  que lista as contas encontradas e grava a escolha em `account_pref` (dir
+  do helper; o marcador `•` indica a **preferida**, não a conta ativa do
+  navegador; env `YTM_AUTHUSER` tem o mesmo efeito; valor inválido/ausente
+  volta para a primeira válida);
 - gravado via arquivo temporário → `chmod 600` → `os.replace` (atômico).
 
 ## Auto-recuperação (sem passo manual)

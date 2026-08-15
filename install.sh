@@ -22,6 +22,7 @@ OPT_PROFILE=""
 OPT_NO_DEPS=0
 OPT_SKIP_VERIFY=0
 OPT_UNINSTALL=0
+OPT_HYPRWAVE=0
 
 say()  { printf '\033[1;32m[rofi-ytm]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[rofi-ytm]\033[0m %s\n' "$*" >&2; }
@@ -36,6 +37,7 @@ Options:
   --prefix <dir>       Python venv dir (default: \$HOME/.local/share/ytm-venv)
   --config-dir <dir>   Config dir for deployed scripts (default: \$HOME/.config)
   --no-deps           Skip installing system packages (rofi, mpv, node, python...)
+  --hyprwave          Also build/install the hyprwave Now Playing panel
   --skip-verify       Skip the final search / PO-token verification
   --uninstall         Remove everything this installer created
   -h, --help          Show this help
@@ -105,6 +107,91 @@ install_system_deps() {
   esac
 }
 
+# Deps do painel "Now Playing" (hyprwave) - opcionais, só avisam
+check_panel_deps() {
+  command -v hyprwave >/dev/null 2>&1 && return 0
+  warn "hyprwave não encontrado - o painel de controle não aparece"
+  warn "  (instale com: $0 --hyprwave, ou manual: sudo apt install libgtk4-layer-shell-dev + make install)"
+}
+
+# ----------------------------------------------------------------- hyprwave
+# Painel de controle "Now Playing" (MPRIS) - build automático:
+#   sudo apt install libgtk4-layer-shell-dev; git clone; make; PREFIX make install
+install_hyprwave() {
+  if command -v hyprwave >/dev/null 2>&1; then
+    say "hyprwave já instalado ($(command -v hyprwave))"
+  else
+    [[ "$OPT_NO_DEPS" -eq 1 ]] && { warn "pulando hyprwave (--no-deps)"; return; }
+    command -v git >/dev/null || die "git é necessário para instalar o hyprwave"
+    local distro
+    distro="$(detect_distro)"
+    case "$distro" in
+      apt)    sudo apt-get install -y libgtk4-layer-shell-dev ;;
+      pacman) sudo pacman -S --noconfirm --needed gtk4-layer-shell ;;
+      dnf)    sudo dnf install -y gtk4-layer-shell-devel ;;
+    esac
+    local tmp
+    tmp=$(mktemp -d)
+    say "clonando hyprwave (shantanubaddar/hyprwave) ..."
+    git clone --depth 1 https://github.com/shantanubaddar/hyprwave.git "$tmp/hyprwave"
+    # patches custom do hyprwave (git apply de todos os *.patch de src/hyprwave):
+    # - hyprwave-reconnect.patch: re-seleciona o player preferido quando um novo
+    #   player MPRIS aparece (senão o hyprwave fica preso no MPRIS nativo do
+    #   mpv e nunca troca para a bridge "ytm")
+    # - hyprwave-art.patch: preserva a proporção da arte e usa COVER no box
+    #   principal (thumbnail 16:9 não fica espremida nem com faixas laterais)
+    local applied_patch=0
+    for p in "$SRC_DIR"/hyprwave/*.patch; do
+      [ -f "$p" ] || continue
+      if (cd "$tmp/hyprwave" && git apply "$p"); then
+        say "patch do hyprwave aplicado: $(basename "$p")"
+        applied_patch=1
+      else
+        warn "falha ao aplicar $(basename "$p")"
+      fi
+    done
+    if [ "$applied_patch" -eq 0 ]; then
+      warn "nenhum patch do hyprwave aplicado (players preferidos podem não re-selecionar; arte pode distorcer)"
+    fi
+    (cd "$tmp/hyprwave" && make all && PREFIX="$HOME/.local" make install)
+    say "hyprwave instalado em $HOME/.local/bin"
+  fi
+
+  # config.conf: bridge "ytm" primeiro na preferência de players (hyprwave usa a bridge)
+  mkdir -p "$HOME/.config/hyprwave"
+  if [ ! -f "$HOME/.config/hyprwave/config.conf" ]; then
+    if [ -f "$SRC_DIR/hyprwave/config.conf" ]; then
+      install -m 644 "$SRC_DIR/hyprwave/config.conf" "$HOME/.config/hyprwave/config.conf"
+    else
+      cat > "$HOME/.config/hyprwave/config.conf" <<'EOF'
+[General]
+edge=top
+margin=10
+layer=top
+exclusive_zone=0
+
+[Notifications]
+enabled=true
+now_playing=true
+
+[Visualizer]
+enabled=true
+idle_timeout=5
+
+[VerticalDisplay]
+enabled=false
+idle_timeout=5
+
+[MusicPlayer]
+preference=ytm,mpv,spotify,vlc
+EOF
+    fi
+    say "config do hyprwave gerado em ~/.config/hyprwave/config.conf"
+  else
+    say "config do hyprwave já existe (mantido)"
+  fi
+}
+
 # ------------------------------------------------------------------ deno
 install_deno() {
   if [ -x "$DENO_INSTALL_DIR/bin/deno" ]; then
@@ -125,8 +212,8 @@ install_venv() {
     mkdir -p "$(dirname "$VENV_DIR")"
     python3 -m venv "$VENV_DIR"
   fi
-  say "instalando ytmusicapi, browser-cookie3, yt-dlp e o provider bgutil ..."
-  "$VENV_DIR/bin/pip" install --upgrade ytmusicapi browser-cookie3 yt-dlp bgutil-ytdlp-pot-provider
+  say "instalando ytmusicapi, browser-cookie3, yt-dlp, provider bgutil e dbus-next (bridge MPRIS) ..."
+  "$VENV_DIR/bin/pip" install --upgrade ytmusicapi browser-cookie3 yt-dlp bgutil-ytdlp-pot-provider dbus-next
 }
 
 # --------------------------------------------------------------- provider
@@ -217,6 +304,28 @@ deploy_scripts() {
     -e "s|__FIREFOX_PROFILE__|$FIREFOX_PROFILE|g" \
     "$target"
 
+  # mpvctl (cliente do socket JSON do mpv) - usado pelo launcher (Now Playing)
+  install -m 755 "$SRC_DIR/mpvctl.py" "$ytm_dir/mpvctl.py"
+  say "mpvctl:   $ytm_dir/mpvctl.py"
+
+  # bridge MPRIS (org.mpris.MediaPlayer2.ytm) - titulo real + thumbnail + next/prev
+  if [ -f "$SRC_DIR/mpris_bridge.py" ]; then
+    install -m 755 "$SRC_DIR/mpris_bridge.py" "$ytm_dir/mpris_bridge.py"
+    sed -i "s|__FIREFOX_PROFILE__|$FIREFOX_PROFILE|g" "$ytm_dir/mpris_bridge.py"
+    say "bridge:   $ytm_dir/mpris_bridge.py"
+  else
+    warn "src/mpris_bridge.py ausente - hyprwave sem titulo real/thumbnail/next-prev"
+  fi
+
+  # toggle de visibilidade do painel (respeita o estado manual via /tmp/ytm_panel_hidden)
+  if [ -f "$SRC_DIR/hyprwave-panel-toggle.sh" ]; then
+    mkdir -p "$HOME/.local/bin"
+    install -m 755 "$SRC_DIR/hyprwave-panel-toggle.sh" "$HOME/.local/bin/hyprwave-panel-toggle"
+    say "toggle:   $HOME/.local/bin/hyprwave-panel-toggle"
+  else
+    warn "src/hyprwave-panel-toggle.sh ausente - não será possível esconder/mostrar o painel do menu"
+  fi
+
   # rofi themes (KoolDots) ausentes -> remove os -config, usa o tema padrão
   if ! ls "$CONFIG_DIR"/rofi/config-rofi-Beats*.rasi >/dev/null 2>&1; then
     sed -i -E 's/ -config "\$rofi_theme(_menu)?"//g' "$target"
@@ -282,6 +391,27 @@ Depois recarregue:
 EOF
 }
 
+# ------------------------------------------------------- keybind (toggle painel)
+setup_toggle_keybind() {
+  local kb="$CONFIG_DIR/hypr/configs/Keybinds.conf"
+  local line
+  if [ ! -f "$HOME/.local/bin/hyprwave-panel-toggle" ]; then
+    warn "toggle do painel não deployado - pulando keybind SUPER+CTRL+Y"
+    return
+  fi
+  if [ ! -f "$kb" ]; then
+    say "Keybinds.conf do Hyprland não encontrado ($kb) - keybind do painel não adicionado"
+    return
+  fi
+  if grep -qF 'Toggle YTM panel' "$kb"; then
+    say "keybind SUPER+CTRL+Y (toggle painel) já presente no Keybinds.conf"
+    return
+  fi
+  line="bindd = \$mainMod CTRL, Y, Toggle YTM panel, exec, $HOME/.local/bin/hyprwave-panel-toggle"
+  printf '\n# rofi-ytm: mostra/esconde o painel do hyprwave\n%s\n' "$line" >>"$kb"
+  say "keybind SUPER+CTRL+Y adicionado no Keybinds.conf (recarregue com hyprctl reload)"
+}
+
 # ---------------------------------------------------------------- uninstall
 uninstall() {
   local ytm_dir="$CONFIG_DIR/rofi/scripts/ytm"
@@ -296,11 +426,19 @@ uninstall() {
 Serão removidos:
   venv:            $VENV_DIR
   provider:        $PROVIDER_DIR
-  helper scripts:  $ytm_dir
+  helper scripts:  $ytm_dir   (inclui mpvctl.py e a bridge mpris_bridge.py)
   launcher:        $launcher
 EOF
   confirm "Confirmar remoção?" || die "uninstall abortado"
   rm -rf "$VENV_DIR" "$PROVIDER_DIR" "$ytm_dir" "$launcher"
+  rm -f "$HOME/.local/bin/hyprwave-panel-toggle"
+  rm -f /tmp/mpv-ytm.sock /tmp/ytm_bridge.pid /tmp/ytm_panel_hidden
+  pkill -f "ytm/mpris_bridge" 2>/dev/null || true
+  if [ -f "$CONFIG_DIR/hypr/configs/Keybinds.conf" ]; then
+    sed -i '/Toggle YTM panel/d;/rofi-ytm: mostra\/esconde o painel do hyprwave/d' \
+      "$CONFIG_DIR/hypr/configs/Keybinds.conf" 2>/dev/null || true
+    say "keybind SUPER+CTRL+Y removido do Keybinds.conf"
+  fi
   say "removido."
 }
 
@@ -314,6 +452,7 @@ main() {
       --no-deps)    OPT_NO_DEPS=1; shift ;;
       --skip-verify) OPT_SKIP_VERIFY=1; shift ;;
       --uninstall)  OPT_UNINSTALL=1; shift ;;
+      --hyprwave)   OPT_HYPRWAVE=1; shift ;;
       -h|--help)    usage; exit 0 ;;
       *)            die "opção desconhecida: $1 (use --help)" ;;
     esac
@@ -328,11 +467,14 @@ main() {
 
   say "RofiYtm installer v$VERSION"
   [[ "$OPT_NO_DEPS" -eq 0 ]] && install_system_deps
+  check_panel_deps
+  [[ "$OPT_HYPRWAVE" -eq 1 ]] && install_hyprwave
   install_deno
   install_venv
   install_provider
   detect_profile
   deploy_scripts
+  setup_toggle_keybind
   bootstrap_auth
   [[ "$OPT_SKIP_VERIFY" -eq 0 ]] && verify_install
   print_keybind_help

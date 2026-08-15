@@ -1,0 +1,23 @@
+diff --git a/main.c b/main.c
+index 5fa4bf8..697a2c8 100644
+--- a/main.c
++++ b/main.c
+@@ -1331,12 +1331,12 @@ static void on_player_name_changed(GDBusConnection *connection,
+             }
+             state->reconnect_timer = g_timeout_add_seconds(2, (GSourceFunc)find_active_player, state);
+         }
+-    } else if (!state->current_player && g_str_has_prefix(name, "org.mpris.MediaPlayer2.")) {
+-        // A new player appeared and we're not connected to anything
+-        if (strlen(new_owner) > 0) {
+-            g_print("✓ New player detected: %s\n", name);
+-            find_active_player(state);
+-        }
++    } else if (g_str_has_prefix(name, "org.mpris.MediaPlayer2.") && strlen(new_owner) > 0) {
++        // A new player appeared. Re-evaluate the player preference so that a
++        // preferred player that shows up after we already connected (e.g. our
++        // own MPRIS bridge "ytm" vs the native mpv MPRIS) still wins.
++        g_print("✓ New player detected: %s\n", name);
++        find_active_player(state);
+     }
+ }
+ 

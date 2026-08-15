@@ -18,9 +18,13 @@ rofi -> sua conta YouTube Music (ytmusicapi) -> listas -> mpv + yt-dlp
   - ▶️ **Play whole playlist** — toca a playlist inteira pelo ID
   - 🎵 **Pick a song** — lista as faixas (até 200) e você escolhe
 - Notificação na tela com a faixa atual (`swaync` + ícone `music.png`)
+- **Painel "Now Playing"** (Hyprwave): nome real da música, thumbnail do YouTube,
+  progresso/volume e controles play/pause/próxima/anterior — em faixa única e
+  em playlists inteiras (via bridge MPRIS `org.mpris.MediaPlayer2.ytm`)
 - Encerra a música atual antes de tocar a próxima (mantém `mpvpaper` vivo)
 - Autenticação **automática** com sua conta: os headers são regenerados a partir
-  do Firefox sempre que o cookie expira — sem passo manual
+  do Firefox sempre que o cookie expira — sem passo manual (com 2+ contas, um
+  seletor escolhe qual usar)
 
 ## Atalhos
 
@@ -28,6 +32,7 @@ rofi -> sua conta YouTube Music (ytmusicapi) -> listas -> mpv + yt-dlp
 |---|---|
 | `SUPER SHIFT Y` | Abre o menu YouTube Music diretamente |
 | `SUPER SHIFT M` | Menu Online Music (RofiBeats) → opção "Play from YouTube Music 🎧" |
+| `SUPER CTRL Y` | Mostra/esconde o painel do Hyprwave (adicionado pelo instalador) |
 
 ## Instalação rápida
 
@@ -43,6 +48,10 @@ YouTube) e um Python 3.10+.
 ./install.sh --help          # todas as opções (--no-deps, --prefix, --uninstall...)
 ```
 
+> **Painel "Now Playing":** para ativá-lo também, rode `./install.sh --hyprwave`
+> (builda e instala o Hyprwave + adiciona o keybind `SUPER CTRL Y`).
+> Sem ele a música toca normal — só o painel não abre.
+
 O instalador cobre Ubuntu/Debian (apt), Arch (pacman) e Fedora (dnf), detecta
 o perfil do Firefox (snap → nativo → flatpak), aplica fallbacks quando os temas
 KoolDots/ícones não existirem, roda a verificação final (API + PO token com
@@ -53,7 +62,7 @@ Forma manual (equivalente ao que o instalador faz):
 ```bash
 # 1. venv com as libs
 python3 -m venv ~/.local/share/ytm-venv
-~/.local/share/ytm-venv/bin/pip install ytmusicapi browser-cookie3 yt-dlp bgutil-ytdlp-pot-provider
+~/.local/share/ytm-venv/bin/pip install ytmusicapi browser-cookie3 yt-dlp bgutil-ytdlp-pot-provider dbus-next
 
 # 2. deno (runtime JS do yt-dlp para o desafio de assinaturas)
 curl -fsSL https://deno.land/install.sh | sh -s -- -y
@@ -63,7 +72,15 @@ git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider ~/bg
 (cd ~/bgutil-ytdlp-pot-provider/server && npm ci --frozen-lockfile)
 
 # 4. copiar os scripts de src/ para os destinos de "Onde vive o sistema real"
-#    (src/ytm.py, src/refresh_auth.py, src/RofiYtm.sh — chmod +x)
+#    (src/ytm.py, src/refresh_auth.py, src/RofiYtm.sh, src/mpvctl.py,
+#     src/mpris_bridge.py, src/hyprwave-panel-toggle.sh — chmod +x)
+
+# 5. (opcional) painel "Now Playing": buildar/instalar o Hyprwave
+#    sudo apt install libgtk4-layer-shell-dev
+#    git clone https://github.com/shantanubaddar/hyprwave /tmp/hyprwave
+#    cd /tmp/hyprwave && for p in /path/to/rofi-ytm/src/hyprwave/*.patch; do git apply "$p"; done
+#    make && PREFIX=~/.local make install
+#    mkdir -p ~/.config/hyprwave && cp /path/to/rofi-ytm/src/hyprwave/config.conf ~/.config/hyprwave/
 ```
 
 > Detalhes completos, o passo a passo de instalação e a configuração de teclas
@@ -78,14 +95,19 @@ rofi-ytm/
 ├── src/                      # scripts-fonte (fonte da verdade dos deployados)
 │   ├── RofiYtm.sh            # interface rofi (placeholders resolvidos no deploy)
 │   ├── ytm.py                # helper da API
-│   └── refresh_auth.py       # regenerador de credencial
+│   ├── refresh_auth.py       # regenerador de credencial
+│   ├── mpvctl.py             # cliente do socket JSON do mpv (p/ o painel)
+│   ├── mpris_bridge.py       # player MPRIS com título real + thumbnail + next/prev
+│   ├── hyprwave-panel-toggle.sh  # mostra/esconde o painel (menu + keybind)
+│   └── hyprwave/             # config do Hyprwave + patches aplicados no build
 └── docs/
     ├── 01-overview.md          # visão geral, stack e fluxo
     ├── 02-architecture.md      # componentes e instalação em detalhe
     ├── 03-authentication.md    # autenticação (headers do navegador + SAPISIDHASH)
     ├── 04-playback.md          # playback (PO Token, deno, yt-dlp, mpv)
     ├── 05-troubleshooting.md   # problemas comuns e correções
-    └── 06-history.md           # jornada completa e decisões de projeto
+    ├── 06-history.md           # jornada completa e decisões de projeto
+    └── 07-now-playing-panel.md # painel "Now Playing" (Hyprwave + bridge MPRIS)
 ```
 
 ## Onde vive o sistema real
@@ -95,10 +117,14 @@ rofi-ytm/
 | `~/.config/hypr/UserScripts/RofiYtm.sh` | Interface rofi (script principal) |
 | `~/.config/rofi/scripts/ytm/ytm.py` | Helper: busca/curtidas/playlists via ytmusicapi |
 | `~/.config/rofi/scripts/ytm/refresh_auth.py` | Regenera headers_auth.json a partir do Firefox |
+| `~/.config/rofi/scripts/ytm/mpvctl.py` | Cliente do socket JSON do mpv (`ping`, `next`, `prev`...) |
+| `~/.config/rofi/scripts/ytm/mpris_bridge.py` | Player MPRIS `org.mpris.MediaPlayer2.ytm` (painel) |
 | `~/.config/rofi/scripts/ytm/headers_auth.json` | Headers autenticados (**chmod 600, nunca commitar**) |
-| `~/.local/share/ytm-venv/` | venv Python (ytmusicapi, browser-cookie3, yt-dlp, plugin) |
+| `~/.local/share/ytm-venv/` | venv Python (ytmusicapi, browser-cookie3, yt-dlp, plugin, dbus-next) |
 | `~/bgutil-ytdlp-pot-provider/` | Provider de PO Token (clone + `server/node_modules`) |
 | `~/.deno/` | Runtime JS do yt-dlp |
+| `~/.local/bin/hyprwave` | Painel "Now Playing" (instalado com `install.sh --hyprwave`) |
+| `~/.local/bin/hyprwave-panel-toggle` | Mostra/esconde o painel (menu + `SUPER CTRL Y`) |
 | `/tmp/ytm_songs.{tsv,lines}` | Artefatos temporários de cada listagem |
 
 > Os caminhos acima são os **deployados** pelo `install.sh` a partir de `src/`

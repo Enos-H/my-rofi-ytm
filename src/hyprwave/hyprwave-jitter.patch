@@ -1,0 +1,103 @@
+diff --git a/visualizer.c b/visualizer.c
+index 848a943..848a5d3 100644
+--- a/visualizer.c
++++ b/visualizer.c
+@@ -2,7 +2,7 @@
+ #include <math.h>
+ #include <string.h>
+ 
+-#define SMOOTHING_FACTOR 0.7
++#define SMOOTHING_FACTOR 0.85
+ 
+ // Process audio samples into bar heights.
+ // Called from PulseAudio thread — writes ONLY to bar_heights[].
+@@ -66,7 +66,16 @@ static void pa_stream_read_callback(pa_stream *stream, size_t nbytes, void *user
+     const float *samples = (const float *)data;
+     size_t n_samples = length / sizeof(float);
+ 
+-    process_audio_samples(state, samples, n_samples);
++    // Accumulate into a ring-window so each RMS pass runs over a larger
++    // sample window (more samples per bin -> lower variance -> less jitter).
++    for (size_t i = 0; i < n_samples; i++) {
++        state->accum_buf[state->accum_len++] = samples[i];
++        if (state->accum_len >= VISUALIZER_ACCUM_SIZE) {
++            process_audio_samples(state, state->accum_buf, state->accum_len);
++            state->accum_len = 0;
++        }
++    }
++
+     pa_stream_drop(stream);
+ }
+ 
+@@ -93,7 +102,9 @@ static gboolean update_visualizer(gpointer user_data) {
+ 
+         gint bar_height = min_height + (gint)(h * (max_height - min_height));
+ 
+-        gtk_widget_set_size_request(state->bars[i], 3, bar_height);
++        // Width -1: let the bar fill its HBox slot (hexpand distributes the
++        // fixed 275px container evenly) -> packed spectrum like cava.
++        gtk_widget_set_size_request(state->bars[i], -1, bar_height);
+ 
+         // Fade out bars at minimum so there is no flat line when silent
+         gtk_widget_set_opacity(state->bars[i], (bar_height <= min_height) ? 0.0 : 1.0);
+@@ -142,7 +153,7 @@ static void pa_context_state_callback(pa_context *context, void *userdata) {
+ 
+             pa_buffer_attr buffer_attr = {
+                 .maxlength = (uint32_t) -1,
+-                .fragsize  = 4096
++                .fragsize  = 8192
+             };
+ 
+             // Monitor the default sink — captures playback, not mic
+@@ -177,19 +188,21 @@ VisualizerState* visualizer_init() {
+         state->bar_smoothed[i] = 0.0;
+     }
+ 
+-    // Container: horizontal box, 275px wide, bottom-aligned inside the overlay.
+-    GtkWidget *container = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
++    // Container: horizontal box, fills the control-bar width (cava look),
++    // bottom-aligned inside the overlay. Spacing 2 = thin gap between bars
++    // like cava.
++    GtkWidget *container = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+     state->container = container;
+ 
+     gtk_widget_set_overflow(container, GTK_OVERFLOW_HIDDEN);
+-    gtk_widget_set_halign(container, GTK_ALIGN_CENTER);
++    gtk_widget_set_halign(container, GTK_ALIGN_FILL);
+     gtk_widget_set_valign(container, GTK_ALIGN_END);
+-    gtk_widget_set_hexpand(container, FALSE);
++    gtk_widget_set_hexpand(container, TRUE);
+     gtk_widget_set_vexpand(container, FALSE);
+-    gtk_widget_set_size_request(container, 275, -1);
++    gtk_widget_set_size_request(container, -1, -1);
+     gtk_widget_add_css_class(container, "visualizer-container");
+ 
+-    g_print("✓ Visualizer container: 275px fixed width\n");
++    g_print("✓ Visualizer container: fills control bar width\n");
+ 
+     // Create VISUALIZER_BARS bars.  width=-1 + hexpand lets the HBox
+     // distribute them evenly across the container.
+diff --git a/visualizer.h b/visualizer.h
+index 9ee7602..c7319bd 100644
+--- a/visualizer.h
++++ b/visualizer.h
+@@ -4,8 +4,9 @@
+ #include <gtk/gtk.h>
+ #include <pulse/pulseaudio.h>
+ 
+-#define VISUALIZER_BARS 55
++#define VISUALIZER_BARS 32
+ #define VISUALIZER_UPDATE_FPS 60
++#define VISUALIZER_ACCUM_SIZE 2048  // float samples accumulated per RMS pass (~46ms)
+ 
+ typedef struct {
+     GtkWidget *container;  // Main container with bars
+@@ -20,6 +21,8 @@ typedef struct {
+     // Audio data
+     gdouble bar_heights[VISUALIZER_BARS];
+     gdouble bar_smoothed[VISUALIZER_BARS];
++    gfloat accum_buf[VISUALIZER_ACCUM_SIZE];
++    size_t accum_len;
+     
+     // State
+     gboolean is_showing;
