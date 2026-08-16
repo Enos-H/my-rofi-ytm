@@ -445,6 +445,8 @@ setup_lyrics_bindings() {
     "    float = on"
     "    size = 420 300"
     "    move = 1155 42"
+    "    pin = on"
+    "    no_initial_focus = on"
     "}"
   )
   if [ ! -f "$HOME/.local/bin/lyrics-panel-toggle" ]; then

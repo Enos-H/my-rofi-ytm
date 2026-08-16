@@ -44,12 +44,7 @@ sys.exit(1)
 }
 
 open_lyrics() {
-  local addr
   if lyrics_alive; then
-    addr=$(lyrics_address)
-    if [ -n "$addr" ]; then
-      hyprctl dispatch focuswindow "address:$addr" >/dev/null 2>&1 || true
-    fi
     return 0
   fi
   setsid env PATH="__VENV_DIR__/bin:__DENO_DIR__/bin:$PATH" \
@@ -57,8 +52,6 @@ open_lyrics() {
     >/dev/null 2>&1 &
   echo $! >"$LYRICS_PID_FILE"
   sleep 1
-  addr=$(lyrics_address)
-  [ -n "$addr" ] && hyprctl dispatch focuswindow "address:$addr" >/dev/null 2>&1 || true
   return 0
 }
 

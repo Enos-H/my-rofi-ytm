@@ -75,7 +75,10 @@ para a bridge MPRIS).
 - O `install.sh` também insere as windowrules do Hyprland no
   `WindowRules.conf` (idempotente): a janela `class^(ytm-lyrics)$` é
   **flutuante**, posicionada à direita do painel do hyprwave
-  (`move 1155 42`) com `size 420 300` (mantém a borda padrão).
+  (`move 1155 42`) com `size 420 300` (mantém a borda padrão), **fixada
+  em todos os workspaces** (`pin = on` — acompanha o painel, que é uma
+  layer surface) e **nunca rouba o foco** (`no_initial_focus` +
+  `no_focus` — display-only).
 
 ## Troubleshooting
 
