@@ -49,6 +49,7 @@ stop_music() {
     [ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true
     rm -f "$BRIDGE_PID_FILE"
   fi
+  lyrics-panel-toggle close >/dev/null 2>&1 || true
   rm -f "$MPV_SOCKET"
 }
 
@@ -101,7 +102,6 @@ play_url() {
   if [[ "$title" =~ ^(.*)[[:space:]]\([0-9]+:[0-9]{1,2}\)$ ]]; then
     title="${BASH_REMATCH[1]}"
   fi
-  notification "Now Playing:" "$title"
   setsid env PATH="__VENV_DIR__/bin:__DENO_DIR__/bin:$PATH" mpv --no-video --no-terminal --ytdl-format=bestaudio/best \
     --ytdl-raw-options="extractor-args=youtube:player_client=web_music" \
     --ytdl-raw-options="remote-components=ejs:github" \
@@ -110,6 +110,7 @@ play_url() {
     --force-media-title="$title" \
     "$1" >/dev/null 2>&1 &
   open_panel
+  lyrics-panel-toggle open >/dev/null 2>&1 || true
 }
 
 # Reabre o painel "Now Playing" se o mpv estiver vivo
@@ -119,6 +120,7 @@ nowplaying() {
     exit 1
   fi
   open_panel
+  lyrics-panel-toggle open >/dev/null 2>&1 || true
 }
 
 # Relê os cookies do Firefox (ex.: depois de trocar de conta) e regrava headers_auth.json.
@@ -178,6 +180,21 @@ toggle_panel() {
   else
     notification "YouTube Music" "Painel mostrado"
   fi
+}
+
+# Menu de letras: abrir/fechar a janela ytm-lyrics e redimensionar
+lyrics_menu() {
+  local sub
+  sub=$(printf "🎤 Mostrar/Esconder Letras\n📐 Compacta\n📐 Média\n📐 Grande" |
+    rofi -dmenu -config "$rofi_theme_menu" \
+      -theme-str 'entry { placeholder: "🎤 Letras"; }')
+  [[ -z "$sub" ]] && exit 1
+  case "$sub" in
+  *"Mostrar/Esconder"*) lyrics-panel-toggle visibility >/dev/null 2>&1 || true ;;
+  *"Compacta"*) lyrics-panel-toggle size compacta >/dev/null 2>&1 || true ;;
+  *"Média"*) lyrics-panel-toggle size media >/dev/null 2>&1 || true ;;
+  *"Grande"*) lyrics-panel-toggle size grande >/dev/null 2>&1 || true ;;
+  esac
 }
 
 # Search YouTube Music
@@ -243,6 +260,7 @@ user_choice=$(printf "%s\n" \
   "❤️  Liked Songs" \
   "📁 My Playlists" \
   "🎧 Now Playing" \
+  "🎤 Letras" \
   "👁️  Mostrar/Esconder Painel" \
   "🔄 Recarregar Cookies" |
   rofi -dmenu -config "$rofi_theme_menu" \
@@ -253,6 +271,7 @@ case "$user_choice" in
 "❤️  Liked Songs") liked_music ;;
 "📁 My Playlists") playlists_music ;;
 "🎧 Now Playing") nowplaying ;;
+"🎤 Letras") lyrics_menu ;;
 "👁️  Mostrar/Esconder Painel") toggle_panel ;;
 "🔄 Recarregar Cookies") reload_cookies ;;
 esac

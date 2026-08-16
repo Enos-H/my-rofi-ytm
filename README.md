@@ -21,6 +21,10 @@ rofi -> sua conta YouTube Music (ytmusicapi) -> listas -> mpv + yt-dlp
 - **Painel "Now Playing"** (Hyprwave): nome real da música, thumbnail do YouTube,
   progresso/volume e controles play/pause/próxima/anterior — em faixa única e
   em playlists inteiras (via bridge MPRIS `org.mpris.MediaPlayer2.ytm`)
+- 🎤 **Painel de letras** (karaokê ANSI em uma janela kitty): letras sincronizadas
+  do lrclib.net (fallback letra completa/instrumental), layout que se ajusta ao
+  tamanho do terminal com quebra só por palavra inteira — abre junto com a
+  música, fecha no stop (`SUPER CTRL L` ou menu → 🎤 Letras)
 - Encerra a música atual antes de tocar a próxima (mantém `mpvpaper` vivo)
 - Autenticação **automática** com sua conta: os headers são regenerados a partir
   do Firefox sempre que o cookie expira — sem passo manual (com 2+ contas, um
@@ -33,6 +37,7 @@ rofi -> sua conta YouTube Music (ytmusicapi) -> listas -> mpv + yt-dlp
 | `SUPER SHIFT Y` | Abre o menu YouTube Music diretamente |
 | `SUPER SHIFT M` | Menu Online Music (RofiBeats) → opção "Play from YouTube Music 🎧" |
 | `SUPER CTRL Y` | Mostra/esconde o painel do Hyprwave (adicionado pelo instalador) |
+| `SUPER CTRL L` | Abre/fecha o painel de letras (adicionado pelo instalador) |
 
 ## Instalação rápida
 
@@ -73,7 +78,8 @@ git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider ~/bg
 
 # 4. copiar os scripts de src/ para os destinos de "Onde vive o sistema real"
 #    (src/ytm.py, src/refresh_auth.py, src/RofiYtm.sh, src/mpvctl.py,
-#     src/mpris_bridge.py, src/hyprwave-panel-toggle.sh — chmod +x)
+#     src/mpris_bridge.py, src/hyprwave-panel-toggle.sh,
+#     src/lyrics_player.py, src/lyrics-panel-toggle.sh — chmod +x)
 
 # 5. (opcional) painel "Now Playing": buildar/instalar o Hyprwave
 #    sudo apt install libgtk4-layer-shell-dev
@@ -99,6 +105,8 @@ rofi-ytm/
 │   ├── mpvctl.py             # cliente do socket JSON do mpv (p/ o painel)
 │   ├── mpris_bridge.py       # player MPRIS com título real + thumbnail + next/prev
 │   ├── hyprwave-panel-toggle.sh  # mostra/esconde o painel (menu + keybind)
+│   ├── lyrics_player.py      # karaokê ANSI das letras (lrclib + MPRIS)
+│   ├── lyrics-panel-toggle.sh   # abre/fecha/redimensiona a janela de letras
 │   └── hyprwave/             # config do Hyprwave + patches aplicados no build
 └── docs/
     ├── 01-overview.md          # visão geral, stack e fluxo
@@ -107,7 +115,8 @@ rofi-ytm/
     ├── 04-playback.md          # playback (PO Token, deno, yt-dlp, mpv)
     ├── 05-troubleshooting.md   # problemas comuns e correções
     ├── 06-history.md           # jornada completa e decisões de projeto
-    └── 07-now-playing-panel.md # painel "Now Playing" (Hyprwave + bridge MPRIS)
+    ├── 07-now-playing-panel.md # painel "Now Playing" (Hyprwave + bridge MPRIS)
+    └── 08-lyrics-panel.md      # painel de letras (karaokê ANSI em janela kitty)
 ```
 
 ## Onde vive o sistema real
@@ -119,12 +128,14 @@ rofi-ytm/
 | `~/.config/rofi/scripts/ytm/refresh_auth.py` | Regenera headers_auth.json a partir do Firefox |
 | `~/.config/rofi/scripts/ytm/mpvctl.py` | Cliente do socket JSON do mpv (`ping`, `next`, `prev`...) |
 | `~/.config/rofi/scripts/ytm/mpris_bridge.py` | Player MPRIS `org.mpris.MediaPlayer2.ytm` (painel) |
+| `~/.config/rofi/scripts/ytm/lyrics_player.py` | Karaokê ANSI das letras (lê a bridge via D-Bus + lrclib.net) |
 | `~/.config/rofi/scripts/ytm/headers_auth.json` | Headers autenticados (**chmod 600, nunca commitar**) |
 | `~/.local/share/ytm-venv/` | venv Python (ytmusicapi, browser-cookie3, yt-dlp, plugin, dbus-next) |
 | `~/bgutil-ytdlp-pot-provider/` | Provider de PO Token (clone + `server/node_modules`) |
 | `~/.deno/` | Runtime JS do yt-dlp |
 | `~/.local/bin/hyprwave` | Painel "Now Playing" (instalado com `install.sh --hyprwave`) |
 | `~/.local/bin/hyprwave-panel-toggle` | Mostra/esconde o painel (menu + `SUPER CTRL Y`) |
+| `~/.local/bin/lyrics-panel-toggle` | Abre/fecha/redimensiona o painel de letras (menu + `SUPER CTRL L`) |
 | `/tmp/ytm_songs.{tsv,lines}` | Artefatos temporários de cada listagem |
 
 > Os caminhos acima são os **deployados** pelo `install.sh` a partir de `src/`

@@ -1,8 +1,47 @@
 diff --git a/main.c b/main.c
-index 5fa4bf8..697a2c8 100644
+index 5fa4bf8..f5bd46f 100644
 --- a/main.c
 +++ b/main.c
-@@ -1331,12 +1331,12 @@ static void on_player_name_changed(GDBusConnection *connection,
+@@ -1222,9 +1222,15 @@ static void update_metadata(AppState *state) {
+         gtk_label_set_text(GTK_LABEL(state->artist_label), "Unknown Artist");
+     }
+     
+-    // CRITICAL: Clear old album art before loading new to prevent memory leak
+-    clear_album_art_container(state->album_cover);
+-    load_album_art_to_container(art_url, state->album_cover, 120);
++    // Load art ONLY when the track actually changed. update_metadata() runs on
++    // every PropertiesChanged signal (the bridge emits Position changes every
++    // ~0.5s poll), and loading an http(s) art URL is a synchronous network
++    // fetch + decode on the GTK main thread. Doing it on every poll starved
++    // the visualizer's 16ms render timeout and froze the waves.
++    if (track_changed) {
++        clear_album_art_container(state->album_cover);
++        load_album_art_to_container(art_url, state->album_cover, 120);
++    }
+     
+     if (state->current_player) {
+         GError *error = NULL;
+@@ -1267,10 +1273,15 @@ static void update_playback_status(AppState *state) {
+         const gchar *status = g_variant_get_string(status_var, NULL);
+         gboolean was_playing = state->is_playing;
+         state->is_playing = g_strcmp0(status, "Playing") == 0;
+-        
+-        gchar *icon_path = get_icon_path(state->is_playing ? "pause.svg" : "play.svg");
+-        gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
+-        free_path(icon_path);
++
++        // Only reload the icon file when the play state actually changed;
++        // this runs on every PropertiesChanged and reloading (plus the
++        // get_icon_path stdout spam) every ~0.5s starved the main loop.
++        if (was_playing != state->is_playing) {
++            gchar *icon_path = get_icon_path(state->is_playing ? "pause.svg" : "play.svg");
++            gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
++            free_path(icon_path);
++        }
+         
+         // UPDATE VERTICAL DISPLAY
+         if (state->vertical_display) {
+@@ -1331,12 +1342,12 @@ static void on_player_name_changed(GDBusConnection *connection,
              }
              state->reconnect_timer = g_timeout_add_seconds(2, (GSourceFunc)find_active_player, state);
          }
@@ -21,3 +60,13 @@ index 5fa4bf8..697a2c8 100644
      }
  }
  
+@@ -1881,7 +1892,8 @@ if (state->layout->is_vertical) {
+         state->control_bar_container = control_bar;
+         
+         if (state->visualizer) {
+-            // Create overlay: control bar as base, visualizer on top
++            // Overlay: control bar as base, visualizer on top (vanilla hyprwave layout,
++            // keeps the panel at its original size with the waves inside the dark box)
+             GtkWidget *overlay = gtk_overlay_new();
+             gtk_overlay_set_child(GTK_OVERLAY(overlay), control_bar);
+             

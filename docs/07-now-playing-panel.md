@@ -84,7 +84,9 @@ Dependência Python: `dbus-next` (instalado no venv pelo `install.sh`).
    - `hyprwave-art.patch`: proporção da arte + layout da notificação;
    - `hyprwave-jitter.patch`: ondas estáveis (janela de ~2048 amostras por
      passada RMS + `SMOOTHING_FACTOR=0.85` + `fragsize=8192`) — sem os pulos
-     das barras durante a reprodução;
+     das barras durante a reprodução; as ondas ficam no rodapé da control bar
+     (overlay com `size_request(-1, 24)`), mantendo o painel no tamanho
+     original (~354×32 colapsado);
 3. gera `~/.config/hyprwave/config.conf` com `preference = ytm,mpv,spotify,vlc`
    e visualizer ativo.
 
@@ -153,4 +155,5 @@ independente de o painel estar oculto.
 | Painel congela/volta ao idle no fim da música | mpv morreu (fim da faixa) → bridge sai → painel volta ao visualizer idle (comportamento por design) |
 | `hyprwave-toggle` diz "not running" | painel fechado por completo → `RofiYtm.sh` reabre ao tocar música |
 | Ondas pulam/trepitam durante a reprodução | build do hyprwave sem `hyprwave-jitter.patch` → reinstalar com `install.sh --hyprwave` |
+| Ondas CONGELAM (paradas) com a música tocando | versão antiga do build recarregava a capa do álbum (download HTTP síncrono) e o ícone de play/pause a cada `PropertiesChanged` do MPRIS (~2x/s), travando o main loop do GTK e o render das barras de 60fps → a partir de agora só reconstrói a capa na troca de música e o ícone na troca de estado; se o binário for antigo, reinstalar com `install.sh --hyprwave` |
 | Painel não reabre ao tocar música depois de eu escondê-lo | comportamento por design: `/tmp/ytm_panel_hidden` existe (você escondeu manualmente) → use o toggle (`👁️ Mostrar/Esconder Painel` ou `SUPER+CTRL+Y`) para voltar ao auto-mostrar |

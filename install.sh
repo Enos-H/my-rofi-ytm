@@ -140,6 +140,8 @@ install_hyprwave() {
     #   mpv e nunca troca para a bridge "ytm")
     # - hyprwave-art.patch: preserva a proporção da arte e usa COVER no box
     #   principal (thumbnail 16:9 não fica espremida nem com faixas laterais)
+    # - hyprwave-jitter.patch: ondas estáveis (ring buffer + smoothing) e
+    #   container limitado ao rodapé da control bar (painel no tamanho original)
     local applied_patch=0
     for p in "$SRC_DIR"/hyprwave/*.patch; do
       [ -f "$p" ] || continue
@@ -326,6 +328,26 @@ deploy_scripts() {
     warn "src/hyprwave-panel-toggle.sh ausente - não será possível esconder/mostrar o painel do menu"
   fi
 
+  # painel de letras (karaokê ANSI em uma janela kitty dedicada)
+  if [ -f "$SRC_DIR/lyrics_player.py" ]; then
+    install -m 755 "$SRC_DIR/lyrics_player.py" "$ytm_dir/lyrics_player.py"
+    say "lyrics:   $ytm_dir/lyrics_player.py"
+  else
+    warn "src/lyrics_player.py ausente - painel de letras não será deployado"
+  fi
+  if [ -f "$SRC_DIR/lyrics-panel-toggle.sh" ]; then
+    mkdir -p "$HOME/.local/bin"
+    install -m 755 "$SRC_DIR/lyrics-panel-toggle.sh" "$HOME/.local/bin/lyrics-panel-toggle"
+    sed -i \
+      -e "s|__VENV_DIR__|$VENV_DIR|g" \
+      -e "s|__DENO_DIR__|$DENO_INSTALL_DIR|g" \
+      -e "s|__CONFIG_DIR__|$CONFIG_DIR|g" \
+      "$HOME/.local/bin/lyrics-panel-toggle"
+    say "lyrics toggle: $HOME/.local/bin/lyrics-panel-toggle"
+  else
+    warn "src/lyrics-panel-toggle.sh ausente - não será possível abrir/fechar as letras"
+  fi
+
   # rofi themes (KoolDots) ausentes -> remove os -config, usa o tema padrão
   if ! ls "$CONFIG_DIR"/rofi/config-rofi-Beats*.rasi >/dev/null 2>&1; then
     sed -i -E 's/ -config "\$rofi_theme(_menu)?"//g' "$target"
@@ -412,6 +434,47 @@ setup_toggle_keybind() {
   say "keybind SUPER+CTRL+Y adicionado no Keybinds.conf (recarregue com hyprctl reload)"
 }
 
+# ------------------------------------------------- keybinds (painel de letras)
+setup_lyrics_bindings() {
+  local wr="$CONFIG_DIR/hypr/configs/WindowRules.conf"
+  local kb="$CONFIG_DIR/hypr/configs/Keybinds.conf"
+  local rules=(
+    "windowrule {"
+    "    name = ytm lyrics"
+    "    match:class = ^(ytm-lyrics)\$"
+    "    float = on"
+    "    size = 420 300"
+    "    move = 1155 42"
+    "}"
+  )
+  if [ ! -f "$HOME/.local/bin/lyrics-panel-toggle" ]; then
+    warn "lyrics-panel-toggle não deployado - pulando windowrules/keybind das letras"
+    return
+  fi
+  if [ -f "$wr" ]; then
+    if grep -qF 'ytm-lyrics' "$wr"; then
+      say "windowrules do painel de letras já presentes no WindowRules.conf"
+    else
+      printf '\n# rofi-ytm: painel de letras (karaokê ANSI)\n' >>"$wr"
+      printf '%s\n' "${rules[@]}" >>"$wr"
+      say "windowrules do painel de letras adicionados no WindowRules.conf"
+    fi
+  else
+    warn "WindowRules.conf do Hyprland não encontrado ($wr) - adicione manualmente:"
+    printf '  %s\n' "${rules[@]}"
+  fi
+  if [ -f "$kb" ]; then
+    if grep -qF 'Toggle YTM lyrics' "$kb"; then
+      say "keybind SUPER+CTRL+L (letras) já presente no Keybinds.conf"
+    else
+      printf '\n# rofi-ytm: abre/fecha o painel de letras\nbindd = $mainMod CTRL, L, Toggle YTM lyrics, exec, $HOME/.local/bin/lyrics-panel-toggle visibility\n' >>"$kb"
+      say "keybind SUPER+CTRL+L adicionado no Keybinds.conf (recarregue com hyprctl reload)"
+    fi
+  else
+    warn "Keybinds.conf do Hyprland não encontrado ($kb) - keybind das letras não adicionado"
+  fi
+}
+
 # ---------------------------------------------------------------- uninstall
 uninstall() {
   local ytm_dir="$CONFIG_DIR/rofi/scripts/ytm"
@@ -432,12 +495,19 @@ EOF
   confirm "Confirmar remoção?" || die "uninstall abortado"
   rm -rf "$VENV_DIR" "$PROVIDER_DIR" "$ytm_dir" "$launcher"
   rm -f "$HOME/.local/bin/hyprwave-panel-toggle"
-  rm -f /tmp/mpv-ytm.sock /tmp/ytm_bridge.pid /tmp/ytm_panel_hidden
+  rm -f "$HOME/.local/bin/lyrics-panel-toggle"
+  rm -f /tmp/mpv-ytm.sock /tmp/ytm_bridge.pid /tmp/ytm_panel_hidden /tmp/ytm_lyrics.pid
   pkill -f "ytm/mpris_bridge" 2>/dev/null || true
+  pkill -f "[y]tm-lyrics" 2>/dev/null || true
   if [ -f "$CONFIG_DIR/hypr/configs/Keybinds.conf" ]; then
-    sed -i '/Toggle YTM panel/d;/rofi-ytm: mostra\/esconde o painel do hyprwave/d' \
+    sed -i '/Toggle YTM panel/d;/Toggle YTM lyrics/d;/rofi-ytm: mostra\/esconde o painel do hyprwave/d;/rofi-ytm: abre\/fecha o painel de letras/d' \
       "$CONFIG_DIR/hypr/configs/Keybinds.conf" 2>/dev/null || true
-    say "keybind SUPER+CTRL+Y removido do Keybinds.conf"
+    say "keybinds do painel/letras removidos do Keybinds.conf"
+  fi
+  if [ -f "$CONFIG_DIR/hypr/configs/WindowRules.conf" ]; then
+    sed -i '/rofi-ytm: painel de letras (karaokê ANSI)/,/}/d' \
+      "$CONFIG_DIR/hypr/configs/WindowRules.conf" 2>/dev/null || true
+    say "windowrules do painel de letras removidas do WindowRules.conf"
   fi
   say "removido."
 }
@@ -475,6 +545,7 @@ main() {
   detect_profile
   deploy_scripts
   setup_toggle_keybind
+  setup_lyrics_bindings
   bootstrap_auth
   [[ "$OPT_SKIP_VERIFY" -eq 0 ]] && verify_install
   print_keybind_help

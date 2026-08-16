@@ -1,5 +1,5 @@
 diff --git a/visualizer.c b/visualizer.c
-index 848a943..848a5d3 100644
+index 848a943..f9409d0 100644
 --- a/visualizer.c
 +++ b/visualizer.c
 @@ -2,7 +2,7 @@
@@ -49,34 +49,20 @@ index 848a943..848a5d3 100644
              };
  
              // Monitor the default sink — captures playback, not mic
-@@ -177,19 +188,21 @@ VisualizerState* visualizer_init() {
+@@ -177,8 +188,11 @@ VisualizerState* visualizer_init() {
          state->bar_smoothed[i] = 0.0;
      }
  
 -    // Container: horizontal box, 275px wide, bottom-aligned inside the overlay.
 -    GtkWidget *container = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-+    // Container: horizontal box, fills the control-bar width (cava look),
-+    // bottom-aligned inside the overlay. Spacing 2 = thin gap between bars
-+    // like cava.
++    // Container: horizontal box, 275px fixed width like vanilla hyprwave,
++    // centered and bottom-aligned inside the control bar overlay. This keeps
++    // the waves inside the dark box with margins on both sides (vanilla look).
++    // Spacing 2 = thin gap between bars like cava.
 +    GtkWidget *container = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
      state->container = container;
  
      gtk_widget_set_overflow(container, GTK_OVERFLOW_HIDDEN);
--    gtk_widget_set_halign(container, GTK_ALIGN_CENTER);
-+    gtk_widget_set_halign(container, GTK_ALIGN_FILL);
-     gtk_widget_set_valign(container, GTK_ALIGN_END);
--    gtk_widget_set_hexpand(container, FALSE);
-+    gtk_widget_set_hexpand(container, TRUE);
-     gtk_widget_set_vexpand(container, FALSE);
--    gtk_widget_set_size_request(container, 275, -1);
-+    gtk_widget_set_size_request(container, -1, -1);
-     gtk_widget_add_css_class(container, "visualizer-container");
- 
--    g_print("✓ Visualizer container: 275px fixed width\n");
-+    g_print("✓ Visualizer container: fills control bar width\n");
- 
-     // Create VISUALIZER_BARS bars.  width=-1 + hexpand lets the HBox
-     // distribute them evenly across the container.
 diff --git a/visualizer.h b/visualizer.h
 index 9ee7602..c7319bd 100644
 --- a/visualizer.h
