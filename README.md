@@ -17,8 +17,10 @@ rofi ─▶ ytmusicapi (sua conta) ─▶ mpv + yt-dlp ─▶ Hyprwave (painel) 
 - 🔎 **Search** — busca no catálogo completo do YouTube Music
 - ❤️ **Liked Songs** — suas músicas curtidas
 - 📁 **My Playlists** — todas as playlists (tocar inteira ou escolher faixa)
-- 🎧 **Now Playing** — painel Hyprwave com título real, thumbnail, progresso,
-  volume e controles play/pause/próxima/anterior (em playlists)
+- 🎧 **Painel Now Playing** — o Hyprwave abre sozinho ao tocar (título real,
+  thumbnail da faixa, progresso, volume e controles play/pause/próxima/
+  anterior em playlists); mostrar/esconder manualmente por menu ou `SUPER
+  + CTRL + Y`
 - 🎛️ **Fila e Reprodução** — tocar a seguir (fila), loop (off/1 faixa/playlist),
   shuffle e ver a fila do mpv
 - 🎤 **Letras** — karaokê ANSI sincronizado (lrclib.net) numa janela kitty

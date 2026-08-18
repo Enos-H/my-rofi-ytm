@@ -173,8 +173,9 @@ sempre desabilitados). A bridge voltou:
 - Título real: launcher passa `--force-media-title` (sem sufixo ` (m:ss)`),
   bridge completa com yt-dlp `-J`/flat-playlist quando vazio;
 - Thumbnail: `mpris:artUrl = https://i.ytimg.com/vi/<id>/maxresdefault.jpg`
-  (hyprwave baixa sozinho — sem cache em disco; descobriu-se que o padrão
-  de URL funciona para ids reais);
+  (depois alterado para `hqdefault` — ver Fase 13; hyprwave baixa sozinho,
+  sem cache em disco; descobriu-se que o padrão de URL funciona para ids
+  reais);
 - Next/Prev: mpv tocando a URL da playlist inteira expande tudo; `mpvctl
   next|prev|playlist` (IPC `playlist-next`/`playlist-prev`); `CanGoNext/
   CanGoPrevious` controlados por `pl_pos/pl_count` → botões habilitados só
@@ -253,8 +254,38 @@ e aprovou 6 frentes (`"prossiga com a implementação de tudo"`):
   protocolo JSON do mpv (poll 1s na conexão persistente); o `ping` virou
   `get_property filename` (exit 1 quando o daemon está ocioso sem faixa);
   os request_ids 50/51 separam o poll do dispatcher de eventos; a bridge
-  só emite `Seeked` quando há `event: seek` pendente; a dedupe de spawn
-  do daemon depende do `ping` — nunca reintroduzir `pause`.
+só emite `Seeked` quando há `event: seek` pendente; a dedupe de spawn
+   do daemon depende do `ping` — nunca reintroduzir `pause`.
+
+## Fase 13 — Fila com nomes reais, capa hqdefault da faixa e estabilidade
+
+Três frentes de correção em sequência:
+
+1. **Fila com nomes reais** — o `mpvctl queue` passou a resolver o nome de
+   cada faixa por um **registry de títulos** (`~/.cache/rofi-ytm/
+   queue_titles.json`): o `load <url> ... <título>` e o `title <nome>`
+   registram o título real por `vid` (e por `pl:<list_id>` para playlists),
+   e há um seed automático dos títulos da playlist (flat-playlist cacheada);
+2. **Menu 8 opções + fila completa** — removida a entrada "🎧 Now Playing"
+   (o painel abre sozinho ao tocar); ao escolher uma faixa, submenu de
+   destino **Tocar agora/Adicionar à fila**; fila com **tocar a seguir**
+   (`mpvctl move` — `playlist-move` para a posição logo após a atual),
+   **remover da fila** (`mpvctl remove` — `playlist-remove`) e **limpar
+   fila** (`mpvctl clear`); playlist inteira toca direto, sem título
+   forçado (o painel mostra a faixa atual, não o nome da playlist);
+3. **Capa e estabilidade do painel** — **causa raiz real**: vids de
+   YouTube com `-` no ID (ex.: `jAtLL-JTBVw`) geravam um object path D-Bus
+   inválido (`/ytm/jAtLL-JTBVw`) e **derrubavam a bridge inteira** →
+   capa/título paravam de atualizar. Fix: o trackid é sanitizado
+   (`_tid()`: `jAtLL-JTBVw` → `/ytm/jAtLL_JTBVw`). A capa passou a ser
+   **sempre a da faixa** (`https://i.ytimg.com/vi/<id>/hqdefault.jpg`,
+   escolha do usuário — em vez da maior thumbnail do álbum/playlist), com
+   **fallback de vid** via `get_property playlist` (request_id 52) quando o
+   `filename` é o URL do stream já resolvido (fila/playlist). Adicionado um
+   **grace period** (STOPPED_GRACE=3s) para a bridge não reportar
+   `Stopped` na transição entre faixas; as letras ganharam `STOPPED_LIMIT`
+   (~3s) e cache por tupla `trackid|título|artista` — a janela de letras
+   não fecha nem busca letra errada em playlist.
 
 ---
 

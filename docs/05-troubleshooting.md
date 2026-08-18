@@ -45,7 +45,7 @@ letras [`08-lyrics-panel.md`](08-lyrics-panel.md).
 | Painel não abre ao tocar | hyprwave não instalado | `command -v hyprwave` → `install.sh --hyprwave` |
 | Painel mostra "Youtube Music" em vez do nome | título chegou vazio à bridge (media-title não foi aplicado) | `play_url <url> "$song_title"` (2º arg) → `mpvctl title`; a bridge resolve o nome real via yt-dlp mesmo assim |
 | Painel mostra título do mpv nativo, não o da bridge | hyprwave conectou no MPRIS nativo antes da bridge nascer | Precisa do `hyprwave-reconnect.patch` no build (reinstalar `install.sh --hyprwave`); validar no log: `grep -E "preferred player"` mostra `ytm` |
-| Painel sem thumbnail | bridge não resolveu a art | Testar `yt-dlp -J "<watch url>"` no venv; bridge viva? (`pgrep -f ytm/mpris_bridge`) |
+| Painel sem thumbnail | bridge não resolveu o vid da faixa (caso fila/playlist) | conferir bridge viva (`pgrep -f ytm/mpris_bridge`); a arte é sempre o hqdefault do vid; debug em `/tmp/ytm_bridge_debug.log` |
 | Botões próxima/anterior desabilitados | faixa única = correto; **em playlist**: URL deve ser `playlist?list=...` | `mpvctl playlist` → `count > 1`; `playerctl -p ytm metadata` muda no next |
 | Hyprwave pegando o player errado | `preference` sem `ytm` primeiro / sem patch de reconnect | config.conf + reinstalar |
 | Sem ondas no painel | visualizer usa PulseAudio | `pactl info`; PipeWire-pulse ativo; `[Visualizer] enabled=true` |

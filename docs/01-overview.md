@@ -54,7 +54,8 @@ Escolher a playlist inteira (Play whole playlist) toca direto — sem submenu.
 
 - ▶️ **Play whole playlist** — toca a playlist inteira pelo ID
   (`https://music.youtube.com/playlist?list=<id>`) — o yt-dlp expande todas
-  as faixas no mpv, e o painel ganha **próxima/anterior**;
+  as faixas no mpv, e o painel ganha **próxima/anterior**; sem título
+  forçado (o painel mostra o **nome da faixa atual**, não o da playlist);
 - 🎵 **Pick a song** — lista as faixas (até 200) e você escolhe uma.
 
 ### Submenu Fila e Reprodução
@@ -75,8 +76,9 @@ Escolher a playlist inteira (Play whole playlist) toca direto — sem submenu.
   socket IPC em `/tmp/mpv-ytm.sock`. Tocar outra faixa é só um `loadfile
   replace` via `mpvctl load` — **nada é morto/reiniciado**, então a bridge
   MPRIS e o painel de letras **não morrem mais entre faixas**;
-- `mpvctl title "<nome>"` aplica o título real ao `media-title` (o sufixo de
-  duração ` (m:ss)` é removido);
+- `mpvctl title "<nome>"` aplica o título real ao `media-title` via
+  `set_property force-media-title` (`media-title` é read-only no IPC; o
+  sufixo de duração ` (m:ss)` é removido);
 - Cliente `web_music` + PO Token (bgutil/deno) → **sem anúncios**, sem 403
   (detalhes em `04-playback.md`);
 - Conta **free** funciona: 128 kbps (itag 251/opus), sem ads;
@@ -144,7 +146,7 @@ SUPER SHIFT Y  (ou RofiBeats > "Play from YouTube Music 🎧")
       │
       ├── spawn_mpv_idle()  (mpv --idle daemon, só se não estiver vivo)
       ├── mpvctl load <url> replace   (loadfile — nunca mata o daemon)
-      ├── mpvctl title "<título>"     (media-title, sufixo (m:ss) removido)
+      ├── mpvctl title "<título>"     (force-media-title, sufixo (m:ss) removido)
       ├── open_panel()  (spawna hyprwave se ausente + bridge MPRIS + mostra painel)
       └── lyrics-panel-toggle open  (janela de letras junto)
 ```

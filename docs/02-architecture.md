@@ -168,9 +168,13 @@ Comandos: `get` (estado completo, tolerante por propriedade), `toggle`,
 `stop` (quit + unlink socket, graceful), `vol ±N|N`, `seek S`,
 `next`/`prev` (`playlist-next`/`playlist-prev`), `load <url> <replace|append>`
 (`loadfile`/`append-play` — usado pelo daemon), `title <texto>`
-(`set_property media-title`), `loop <off|track|playlist>` (`loop-file`/
-`loop-playlist`), `shuffle <on|off>`, `queue` (playlist completa como TSV),
-`play <idx>` (`playlist-pos`), `clear`, `playlist` (`{count, pos}`), `ping`
+(`set_property force-media-title` — `media-title` é read-only no IPC),
+`loop <off|track|playlist>` (`loop-file`/
+`loop-playlist`), `shuffle <on|off>`, `queue` (playlist completa como TSV,
+com nomes resolvidos pelo registry/caches), `play <idx>` (`playlist-pos`),
+`remove <idx>` (`playlist-remove`), `move <idx>` (`playlist-move` para a
+posição logo após a atual — "tocar a seguir"), `clear`, `playlist`
+(`{count, pos}`), `ping`
 (`get_property filename` — exit 1 se o daemon estiver vivo mas sem faixa).
 Stdlib apenas; respostas JSON linha a linha; timeout 2s.
 
@@ -185,12 +189,22 @@ Stdlib apenas; respostas JSON linha a linha; timeout 2s.
   Única poll: `time-pos` + `duration` a cada 1s na **mesma conexão** (não
   spawna mais `mpvctl.py` a cada 0.5s);
 - expõe 15 propriedades (PlaybackStatus — `Stopped` quando o daemon está
-  ocioso sem faixa, Metadata com `xesam:title`/`xesam:artist`/
+  ocioso sem faixa, com um **grace period de 3s** (STOPPED_GRACE) para não
+  desligar os painéis na transição entre faixas; Metadata com
+  `xesam:title`/`xesam:artist`/
   `mpris:length`/`mpris:trackid`/`mpris:artUrl`, Position, Volume,
   CanGoNext/CanGoPrevious — `true` só com playlist) e métodos
   Play/Pause/PlayPause/Stop/Next/Previous/Seek/SetPosition + signal `Seeked`;
-- `artUrl` = `https://i.ytimg.com/vi/<id>/maxresdefault.jpg` (o hyprwave
-  baixa sozinho, sem cache local);
+- `artUrl` = `https://i.ytimg.com/vi/<id>/hqdefault.jpg` — **sempre a capa
+  da faixa** (o yt-dlp enriquece title/artist, mas a arte é forçada para o
+  hqdefault do vídeo, não a thumbnail do álbum/playlist); o hyprwave baixa
+  sozinho, sem cache local; o `mpris:trackid` é **sanitizado** (`_tid()`)
+  porque object path D-Bus só aceita `[A-Za-z0-9_]` — vids com `-`/`_`
+  (ex.: `jAtLL-JTBVw` → `/ytm/jAtLL_JTBVw`) derrubavam a bridge inteira;
+- **Fallback de vid**: quando o `filename` do mpv é o URL de stream já
+  resolvido (caso fila/playlist, sem `?v=`), a bridge consulta a propriedade
+  `playlist` do mpv (request_id 52) e extrai o `vid` da entrada atual —
+  a capa/título certo aparecem também tocando desde a fila;
 - Título/artista: **seed imediato** do `media-title` do mpv (título real
   extraído pelo próprio mpv/yt-dlp); o yt-dlp `-J` (timeout 60s) é chamado
   só em background quando faltar title/artist; flat-playlist da URL da

@@ -100,7 +100,7 @@ Depois, para tocar uma faixa (`play_url()`):
 
 ```bash
 mpvctl load 'https://music.youtube.com/watch?v=<videoId>' replace   # loadfile
-mpvctl title 'Nome Real da Música'                                  # media-title
+mpvctl title 'Nome Real da Música'                                  # set_property force-media-title
 ```
 
 | Flag | Função | Sem ela |
@@ -122,6 +122,9 @@ retry.
 > Em mpv 0.41 `media-title` é read-only no IPC (erro ao setar), mas
 > `force-media-title` é uma opção setável que aplica na hora, até com faixa
 > carregada. O `mpvctl load` limpa a opção antes (`force-media-title ""`)
+> para o título não vazar de uma faixa para a seguinte. Playlist inteira
+> **não** passa título: a faixa atual mostra o nome real extraído pelo
+> mpv/yt-dlp (não o nome da playlist).
 > para o título de uma faixa não vazar para a próxima.
 > A escolha da flag `--ytdl-format=bestaudio/best` mantém o áudio preferido.
 

@@ -36,9 +36,16 @@ RofiYtm.sh ──▶ mpris_bridge.py (org.mpris.MediaPlayer2.ytm)   ──▶ hy
      acordo com a posição real do mpv; com só letra em texto, distribui
      as linhas ao longo da duração; `instrumental` mostra aviso;
   4. sem resultado, mostra "Letra não encontrada".
-- O resultado é cacheado por `trackid` (`/ytm/<id>` do YouTube) em memória
-  **e em disco** (`~/.cache/rofi-ytm/lyrics.json`, TTL 7 dias) — a busca é
-  feita uma vez por faixa, mesmo entre sessões.
+- O resultado é cacheado por tupla `trackid|título|artista` (`/ytm/<id>`
+  do YouTube) em memória **e em disco** (`~/.cache/rofi-ytm/lyrics.json`,
+  TTL 7 dias) — a busca é feita uma vez por faixa, mesmo entre sessões.
+  Chavear por metadata (e não só pelo `trackid`) evita reusar a letra da
+  faixa anterior quando a metadata muda na transição entre faixas da fila/
+  playlist;
+- **Transição entre faixas**: ao trocar de música (fila/playlist) o mpv fica
+  brevemente sem `filename` e a bridge reportaria `Stopped` — o player só
+  fecha após ~3s contínuos de `Stopped` (`STOPPED_LIMIT`), então a janela
+  de letras **não fecha no meio de uma playlist**.
 - O layout se **adapta ao tamanho do terminal**: a largura/textura de
   renderização é recalculada do tamanho real da janela (e re-renderizada
   se ela for redimensionada), então o texto nunca é cortado pelo
