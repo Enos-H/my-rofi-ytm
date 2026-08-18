@@ -19,8 +19,11 @@ rofi ─▶ ytmusicapi (sua conta) ─▶ mpv + yt-dlp ─▶ Hyprwave (painel) 
 - 📁 **My Playlists** — todas as playlists (tocar inteira ou escolher faixa)
 - 🎧 **Now Playing** — painel Hyprwave com título real, thumbnail, progresso,
   volume e controles play/pause/próxima/anterior (em playlists)
+- 🎛️ **Fila e Reprodução** — tocar a seguir (fila), loop (off/1 faixa/playlist),
+  shuffle e ver a fila do mpv
 - 🎤 **Letras** — karaokê ANSI sincronizado (lrclib.net) numa janela kitty
 - 👁️ **Mostrar/Esconder Painel** — oculta o painel mantendo a música
+- ⏹ **Parar Música** — encerra o mpv de forma limpa (quit pelo socket)
 - 🔄 **Recarregar Cookies** — renova a autenticação e troca de conta
   (seletor quando há 2+ contas logadas no Firefox)
 
@@ -71,10 +74,11 @@ rofi-ytm/
 │   ├── RofiYtm.sh              # interface rofi (launcher)
 │   ├── ytm.py                  # helper da API (busca/curtidas/playlists)
 │   ├── refresh_auth.py         # regenerador de credencial (cookies do Firefox)
-│   ├── mpvctl.py               # cliente do socket JSON do mpv
-│   ├── mpris_bridge.py         # player MPRIS (org.mpris.MediaPlayer2.ytm)
+│   ├── mpvctl.py               # cliente do socket JSON do mpv (daemon --idle)
+│   ├── mpris_bridge.py         # player MPRIS (org.mpris.MediaPlayer2.ytm;
+│   │                           #   conexão persistente + eventos, retry, caches)
 │   ├── hyprwave-panel-toggle.sh    # mostra/esconde o painel
-│   ├── lyrics_player.py        # karaokê ANSI das letras (lrclib.net)
+│   ├── lyrics_player.py        # karaokê ANSI das letras (lrclib.net + cache)
 │   ├── lyrics-panel-toggle.sh  # abre/fecha/redimensiona a janela de letras
 │   └── hyprwave/               # config + patches do Hyprwave (build)
 └── docs/                       # documentação (índice acima)

@@ -36,8 +36,9 @@ RofiYtm.sh ──▶ mpris_bridge.py (org.mpris.MediaPlayer2.ytm)   ──▶ hy
      acordo com a posição real do mpv; com só letra em texto, distribui
      as linhas ao longo da duração; `instrumental` mostra aviso;
   4. sem resultado, mostra "Letra não encontrada".
-- O resultado é cacheado por `trackid` (`/ytm/<id>` do YouTube) — a
-  busca é feita uma vez por faixa.
+- O resultado é cacheado por `trackid` (`/ytm/<id>` do YouTube) em memória
+  **e em disco** (`~/.cache/rofi-ytm/lyrics.json`, TTL 7 dias) — a busca é
+  feita uma vez por faixa, mesmo entre sessões.
 - O layout se **adapta ao tamanho do terminal**: a largura/textura de
   renderização é recalculada do tamanho real da janela (e re-renderizada
   se ela for redimensionada), então o texto nunca é cortado pelo
@@ -50,7 +51,8 @@ RofiYtm.sh ──▶ mpris_bridge.py (org.mpris.MediaPlayer2.ytm)   ──▶ hy
 - A janela **abre junto** com a música (o launcher chama
   `lyrics-panel-toggle open` no `play_url`/`Now Playing`) e **fecha
   junto** no `stop_music`. O player também **sai sozinho** quando o
-  mpv morre/fim da faixa (posição some por ~4s).
+  mpv para (posição/música some por ~4s — incluindo o daemon ocioso no
+  fim da fila sem loop).
 
 ## Componentes (deploy)
 

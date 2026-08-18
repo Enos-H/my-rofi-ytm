@@ -1,3 +1,9 @@
 # Credenciais / dados de sessão (nunca versionar)
 headers_auth.json
 account_pref
+
+# Python
+__pycache__/
+*.pyc
+# Artefatos gerados (graphify)
+graphify-out/

@@ -17,7 +17,7 @@ envolvidos e o **ambiente real onde roda** (sistema do autor, com versões).
                 │ exec
                 ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  RofiYtm.sh (Bash) — launcher/menu principal (7 entradas)                │
+│  RofiYtm.sh (Bash) — launcher/menu principal (9 entradas)                │
 │   · ytm.py/refresh_auth.py  → API YouTube Music (ytmusicapi)             │
 │   · pick_from_helper: TSV+LINES → rofi → watch/playlist URL              │
 └───────────────┬───────────────────────────────┬──────────────────────────┘
@@ -31,7 +31,8 @@ envolvidos e o **ambiente real onde roda** (sistema do autor, com versões).
                │ IPC JSON (socket /tmp/mpv-ytm.sock)   │ D-Bus session bus
                ▼                                      ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  mpvctl.py — cliente do socket (get/toggle/vol/seek/next/prev/playlist)  │
+│  mpvctl.py — cliente do socket (get/toggle/vol/seek/next/prev/load/   │
+│              title/loop/shuffle/queue/play/clear/playlist/ping)      │
 └──────────────────────────────────────────────────────────────────────────┘
                │                                              │
                ▼ D-Bus MPRIS                                   ▼ D-Bus MPRIS
@@ -48,8 +49,10 @@ Camadas e o que flui entre elas:
 | Fluxo | Canal | Direção |
 |---|---|---|
 | Launcher → API YTM | HTTP (ytmusicapi, headers auth) | busca/curtidas/playlists |
-| Launcher → mpv | exec (setsid) + argv | toca a URL |
-| Launcher/bridge ↔ mpv | **IPC JSON** (unix socket `/tmp/mpv-ytm.sock`) | get/toggle/vol/seek/next/prev |
+| Launcher → mpv | exec (setsid, 1x — daemon) + IPC `loadfile` | toca/enfileira URL |
+| Launcher/bridge ↔ mpv | **IPC JSON** (unix socket `/tmp/mpv-ytm.sock`) | get/load/title/toggle/vol/seek/next/prev/queue |
+| Bridge → consumidores | **D-Bus** (`org.mpris.MediaPlayer2.ytm`) | metadata + métodos MPRIS |
+| Bridge → mpv | socket persistente + `observe_property`/eventos | estado sem polling por subprocesso |
 | Bridge → consumidores | **D-Bus** (`org.mpris.MediaPlayer2.ytm`) | metadata + métodos MPRIS |
 | Bridge → yt-dlp | subprocess (só p/ título/artista fallback) | enriquecer metadata |
 | Hyprwave ↔ PulseAudio | `@DEFAULT_MONITOR@` | amostras p/ visualizer |
@@ -82,20 +85,37 @@ Camadas e o que flui entre elas:
 
 - `notification()` — `notify-send -u normal -i "$iDIR/music.png"` (erros e
   feedbacks; a notificação "Now Playing" foi removida — o hyprwave notifica);
-- `stop_music()` — mata mpv (exceto `mpvpaper`/`unique-wallpaper-process`),
-  mata a bridge via pidfile, `lyrics-panel-toggle close`, remove o socket;
+- `spawn_mpv_idle()` — sobe o daemon mpv `--idle` (flags yt-dlp + `--vo=null`
+  + socket + `--log-file=/tmp/ytm_mpv.log`) se o `mpvctl ping` falhar;
+  `--vo=null` evita o hang no teardown do wayland ao dar `quit`; espera o socket;
+- `stop_music()` — `mpvctl stop` (quit graceful pelo socket), espera até ~2s o
+  ping falhar, só então `kill -9` nos mpv que **não** são
+  `mpvpaper`/`unique-wallpaper-process`; mata a bridge via pidfile,
+  `lyrics-panel-toggle close`, remove o socket;
 - `pick_from_helper <cmd>...` — roda o helper; erro → notificação crítica;
   rofi com `LINES_FILE`; resolve o id pelo número de linha do `TSV_FILE`;
   **imprime `TITLE\tID` na stdout** (subshell-safe);
-- `play_url(<url>, <título>)` — `stop_music()` + mpv com as 3
-  `--ytdl-raw-options` + `--input-ipc-server` + `--force-media-title`
-  (título sem sufixo ` (m:ss)`) + `open_panel()` + `lyrics-panel-toggle open`;
+- `pick_destination(<url>, <título>)` — submenu de destino ao escolher uma
+  faixa: **Tocar agora** → `play_url`; **Adicionar à fila** →
+  `mpvctl load <url> append <título>` (spawn do daemon se preciso) + notifica
+  "Na fila: …"; usado por Search, Liked e "Pick a song";
+- `play_url(<url>, <título>)` — se `mpvctl ping` falhar → `spawn_mpv_idle()`;
+  `mpvctl load <url> replace` (loadfile — **não mata o daemon**) + `mpvctl
+  title "<título>"` (media-title, sem sufixo ` (m:ss)`) + `open_panel()` +
+  `lyrics-panel-toggle open`;
+- `queue_loop()` / `queue_shuffle()` / `queue_view()` / `queue_menu()` —
+  submenu 🎛️: `loop-file`/`loop-playlist`, `shuffle`, e a lista da fila no
+  rofi (`mpvctl queue`); ao escolher uma faixa, submenu de ação **tocar
+  agora** (`play`), **tocar a seguir** (`move` — `playlist-move` para a
+  posição logo após a atual) ou **remover da fila** (`remove` —
+  `playlist-remove`; remove/reordena reabrem a lista em cadeia); **Limpar
+  fila** (`clear` — `playlist-clear`);
 - `open_panel()` — spawna o hyprwave se ausente; spawna a bridge se o
   pidfile estiver morto; espera o namespace `hyprwave` aparecer no
   `hyprctl layers` (3 misses consecutivos ≈ 0.6s → `hyprwave-toggle
   visibility`); **respeita `/tmp/ytm_panel_hidden`** (estado manual);
-- `nowplaying()` — `mpvctl.py ping`; vivo → `open_panel()` + letras;
-  senão notificação "Nada tocando no momento";
+- `nowplaying()` — removida (a entrada "🎧 Now Playing" saiu do menu; o
+  painel abre sozinho ao tocar via `open_panel()`);
 - `toggle_panel()` — chama `hyprwave-panel-toggle` + notifica o estado;
 - `lyrics_menu()` — submenu 🎤 (visibility + 3 tamanhos via
   `lyrics-panel-toggle`);
@@ -105,9 +125,10 @@ Camadas e o que flui entre elas:
 - `search_music()` / `liked_music()` / `playlists_music()` — fluxos do menu
   (submenu "Play whole playlist" / "Pick a song" nas playlists).
 
-**Menu principal** (7 entradas, `case` exato): 🔎 Search · ❤️ Liked ·
-📁 My Playlists · 🎧 Now Playing · 🎤 Letras · 👁️ Mostrar/Esconder Painel ·
-🔄 Recarregar Cookies.
+**Menu principal** (8 entradas, `case` exato): 🔎 Search · ❤️ Liked ·
+📁 My Playlists · 🎛️ Fila e Reprodução · 🎤 Letras · 👁️ Mostrar/Esconder
+Painel · ⏹ Parar Música · 🔄 Recarregar Cookies. Ao selecionar uma faixa,
+o submenu de destino decide entre tocar agora e enfileirar.
 
 **Contrato do helper (stdout/stderr):** sucesso → uma linha por item + grava
 TSV/LINES; erro → mensagem pt-BR no **stderr** + JSON no stdout + exit 1.
@@ -144,28 +165,44 @@ TSV/LINES; erro → mensagem pt-BR no **stderr** + JSON no stdout + exit 1.
 ### 2.4 `mpvctl.py` — cliente IPC do mpv
 
 Comandos: `get` (estado completo, tolerante por propriedade), `toggle`,
-`stop` (quit + unlink socket), `vol ±N|N`, `seek S`, `next`/`prev`
-(`playlist-next`/`playlist-prev`), `playlist` (`{count, pos}`), `ping`
-(`get_property pause` — responde desde o 1º segundo, antes de o arquivo
-carregar). Stdlib apenas; respostas JSON linha a linha.
+`stop` (quit + unlink socket, graceful), `vol ±N|N`, `seek S`,
+`next`/`prev` (`playlist-next`/`playlist-prev`), `load <url> <replace|append>`
+(`loadfile`/`append-play` — usado pelo daemon), `title <texto>`
+(`set_property media-title`), `loop <off|track|playlist>` (`loop-file`/
+`loop-playlist`), `shuffle <on|off>`, `queue` (playlist completa como TSV),
+`play <idx>` (`playlist-pos`), `clear`, `playlist` (`{count, pos}`), `ping`
+(`get_property filename` — exit 1 se o daemon estiver vivo mas sem faixa).
+Stdlib apenas; respostas JSON linha a linha; timeout 2s.
 
 ### 2.5 `mpris_bridge.py` — player MPRIS próprio
 
 - Nome no bus: `org.mpris.MediaPlayer2.ytm` (o mpv tem MPRIS nativo em
   `.mpv`, mas **sem customização** — sem título real, sem artUrl, sem
   next/prev; por isso a bridge);
-- Poll 0.5s no `mpvctl get`; expõe 15 propriedades (PlaybackStatus, Metadata
-  com `xesam:title`/`xesam:artist`/`mpris:length`/`mpris:trackid`/`mpris:artUrl`,
-  Position, Volume, CanGoNext/CanGoPrevious — `true` só com playlist) e
-  métodos Play/Pause/PlayPause/Stop/Next/Previous/Seek/SetPosition + signal
-  `Seeked`;
+- **Conexão persistente** ao socket do mpv com `observe_property`
+  (media-title, pause, volume, filename, playlist-count, playlist-pos);
+  reage a eventos `property-change`/`end-file`/`playback-restart`/`seek`.
+  Única poll: `time-pos` + `duration` a cada 1s na **mesma conexão** (não
+  spawna mais `mpvctl.py` a cada 0.5s);
+- expõe 15 propriedades (PlaybackStatus — `Stopped` quando o daemon está
+  ocioso sem faixa, Metadata com `xesam:title`/`xesam:artist`/
+  `mpris:length`/`mpris:trackid`/`mpris:artUrl`, Position, Volume,
+  CanGoNext/CanGoPrevious — `true` só com playlist) e métodos
+  Play/Pause/PlayPause/Stop/Next/Previous/Seek/SetPosition + signal `Seeked`;
 - `artUrl` = `https://i.ytimg.com/vi/<id>/maxresdefault.jpg` (o hyprwave
   baixa sozinho, sem cache local);
-- Título/artista: cache por trackid; flat-playlist da URL da playlist quando
-  disponível; senão yt-dlp `-J` na watch URL (lento, timeout 60s);
-- Morre sozinho quando o mpv morre (2 polls falhos); pidfile
-  `/tmp/ytm_bridge.pid`; `--list-accounts` N/A; logs de debug em
-  `/tmp/ytm_bridge_debug.log`.
+- Título/artista: **seed imediato** do `media-title` do mpv (título real
+  extraído pelo próprio mpv/yt-dlp); o yt-dlp `-J` (timeout 60s) é chamado
+  só em background quando faltar title/artist; flat-playlist da URL da
+  playlist quando disponível;
+- **Caches persistentes** em `~/.cache/rofi-ytm/`: `meta.json` (por vid,
+  TTL 7 dias) e `playlists.json` (flat-playlist por list_id, TTL 24h);
+  atômico (`.tmp` + `os.replace`);
+- **Retry automático**: em `end-file` com `reason=error` (403/stall)
+  religa a mesma URL 1 vez (backoff 2s) e notifica;
+- **Reconexão**: se o socket cair, tenta reconectar por até ~2 min antes de
+  sair (sobrevive a restart do daemon); pidfile `/tmp/ytm_bridge.pid`;
+  debug rotativo em `/tmp/ytm_bridge_debug.log` (truncado em 1 MB).
 
 ### 2.6 `hyprwave-panel-toggle.sh` — toggle do painel
 
@@ -177,11 +214,12 @@ pelo keybind `SUPER CTRL Y`.
 ### 2.7 `lyrics_player.py` — karaokê ANSI (fluxo completo em `08-lyrics-panel.md`)
 
 Lê a bridge via D-Bus (fallback MPRIS nativo do mpv), poll 0.2s; busca no
-lrclib (GET → search progressivo → synced/plain/instrumental/none), cache por
-trackid; render ANSI adaptável ao terminal (`update_terminal_size`, SIGWINCH,
-`LYRICS_COLS`/`LYRICS_ROWS` para teste), quebra por palavra inteira,
-espaçamento inteligente (1 vazia entre versos); sai sozinho quando o mpv
-morre (~4s).
+lrclib (GET → search progressivo → synced/plain/instrumental/none), **cache
+persistente por trackid em `~/.cache/rofi-ytm/lyrics.json` (TTL 7 dias)** —
+músicas repetidas não rebuscam o lrclib; render ANSI adaptável ao terminal
+(`update_terminal_size`, SIGWINCH, `LYRICS_COLS`/`LYRICS_ROWS` para teste),
+quebra por palavra inteira, espaçamento inteligente (1 vazia entre versos);
+sai sozinho quando o mpv morre (~4s).
 
 ### 2.8 `lyrics-panel-toggle.sh` — controle da janela de letras
 
@@ -247,10 +285,15 @@ em ordem alfabética** (art → jitter → reconnect) e roda
 ### 4.1 IPC mpv (socket JSON)
 
 - `--input-ipc-server=/tmp/mpv-ytm.sock`; socket antigo é removido antes do
-  spawn; comandos: `{"command": ["get_property", ...]}` etc.;
+  spawn do daemon; comandos: `{"command": ["get_property", ...]}` etc.;
+  respostas JSON linha a linha (Newline-delimited);
+- **Eventos**: a bridge mantém uma conexão persistente e usa
+  `observe_property` (ids próprios) + eventos `property-change`/`end-file`/
+  `playback-restart`/`seek`; o `ping` do mpvctl usa `get_property filename`
+  (exit 1 se o daemon estiver vivo mas sem faixa — idle);
 - propriedades de **arquivo** (time-pos/duration/media-title) só respondem
-  após o buffer do yt-dlp (8–30s); propriedades de **opção** (pause/volume)
-  respondem sempre — o `ping` usa `pause` de propósito.
+  após o buffer do yt-dlp (8–30s); a bridge faz poll só de `time-pos` +
+  `duration` a cada 1s na mesma conexão.
 
 ### 4.2 D-Bus MPRIS
 

@@ -30,19 +30,25 @@ padrão e com os temas já existentes (KoolDots/Beats).
 
 ## Funcionalidades completas
 
-### Menu principal (7 entradas)
+### Menu principal (8 entradas)
 
 `SUPER SHIFT Y` (ou RofiBeats > "Play from YouTube Music 🎧") abre o menu:
 
 | Entrada | O que faz |
 |---|---|
-| 🔎 **Search YouTube Music** | busca no catálogo público (`filter="songs"`, 20 resultados); escolheu → toca |
-| ❤️ **Liked Songs** | suas músicas curtidas (até 100) |
+| 🔎 **Search YouTube Music** | busca no catálogo público (`filter="songs"`, 20 resultados); escolheu → submenu de destino |
+| ❤️ **Liked Songs** | suas músicas curtidas (até 100); escolheu → submenu de destino |
 | 📁 **My Playlists** | todas as playlists da biblioteca, com submenu |
-| 🎧 **Now Playing** | reabre o painel Hyprwave (se o mpv estiver vivo) |
+| 🎛️ **Fila e Reprodução** | submenu: loop, shuffle, ver e limpar a fila do mpv |
 | 🎤 **Letras** | submenu do painel de letras (mostrar/esconder + 3 tamanhos) |
 | 👁️ **Mostrar/Esconder Painel** | alterna a visibilidade do Hyprwave (estado manual) |
+| ⏹ **Parar Música** | encerra o mpv (quit graceful pelo socket) e fecha os painéis |
 | 🔄 **Recarregar Cookies** | regenera a autenticação; com 2+ contas abre um seletor |
+
+Ao selecionar uma música (Search, Liked ou "Pick a song" de uma playlist),
+um **submenu de destino** pergunta: **▶️ Tocar agora** ou **➕ Adicionar à
+fila** (enfileira na cauda do daemon sem interromper a faixa atual).
+Escolher a playlist inteira (Play whole playlist) toca direto — sem submenu.
 
 ### Submenu Playlists
 
@@ -51,16 +57,31 @@ padrão e com os temas já existentes (KoolDots/Beats).
   as faixas no mpv, e o painel ganha **próxima/anterior**;
 - 🎵 **Pick a song** — lista as faixas (até 200) e você escolhe uma.
 
+### Submenu Fila e Reprodução
+
+- 🔁 **Loop** — desligado / 1 faixa / playlist inteira (`loop-file` /
+  `loop-playlist` do mpv);
+- 🔀 **Shuffle** — ativa/desativa o shuffle da playlist do mpv;
+- 📃 **Ver Fila** — lista a playlist do mpv no rofi (`>` marca a atual);
+  escolher uma faixa abre um submenu de ação: **▶️ Tocar agora**, **⏭️ Tocar
+  a seguir** (reordena para ser a próxima — `mpvctl move`) ou **🗑️ Remover
+  da fila** (`mpvctl remove`); remover/reordenar reabre a lista para uma
+  nova operação em cadeia;
+- 🧹 **Limpar fila** — esvazia a playlist do mpv (`mpvctl clear`).
+
 ### Playback
 
-- A música anterior é **sempre encerrada** antes de tocar a próxima
-  (preservando o `mpvpaper`, se estiver rodando);
-- mpv com `--input-ipc-server=/tmp/mpv-ytm.sock` (controle externo via
-  `mpvctl.py`) e `--force-media-title` com o **nome real** da música
-  (sufixo de duração ` (m:ss)` removido);
+- o mpv roda como **daemon persistente** (`mpv --idle`): instância única com
+  socket IPC em `/tmp/mpv-ytm.sock`. Tocar outra faixa é só um `loadfile
+  replace` via `mpvctl load` — **nada é morto/reiniciado**, então a bridge
+  MPRIS e o painel de letras **não morrem mais entre faixas**;
+- `mpvctl title "<nome>"` aplica o título real ao `media-title` (o sufixo de
+  duração ` (m:ss)` é removido);
 - Cliente `web_music` + PO Token (bgutil/deno) → **sem anúncios**, sem 403
   (detalhes em `04-playback.md`);
 - Conta **free** funciona: 128 kbps (itag 251/opus), sem ads;
+- Em falha do stream (403/stall no meio da faixa), a ponte **religa a mesma
+  URL automaticamente** (1x) e notifica;
 - Qualquer cliente MPRIS controla o mpv (`playerctl -p ytm ...`).
 
 ### Painel "Now Playing" (Hyprwave)
@@ -109,19 +130,21 @@ SUPER SHIFT Y  (ou RofiBeats > "Play from YouTube Music 🎧")
 │ 🔎 Search YouTube Music │── query via rofi ─▶ ytm.py search ─▶ lista rofi ─▶ watch?v=<id>
 │ ❤️  Liked Songs         │──────────────────── ytm.py liked ──▶ lista rofi ─▶ watch?v=<id>
 │ 📁 My Playlists         │──────────────────── ytm.py playlists ▶ lista rofi
-│ 🎧 Now Playing          │──────────────────── reabre o painel (se mpv vivo)
+│ 🎛️ Fila e Reprodução     │──────────────────────────── loop/shuffle/fila/limpar
 │ 🎤 Letras               │──────────────────── submenu letras
 │ 👁️  Mostrar/Esconder   │──────────────────── toggle painel (flag manual)
+│ ⏹ Parar Música         │──────────────────── mpvctl stop (quit graceful)
 │ 🔄 Recarregar Cookies   │──────────────────── refresh auth (+ seletor conta)
 └─────────────────────────┘                        │
-                                                   ├─ "Play whole playlist" ▶ playlist?list=<id>
-                                                   └─ "Pick a song" ▶ ytm.py playlist <id> ▶ rofi ▶ watch?v=<id>
-        │
+                                                    ├─ "Play whole playlist" ▶ playlist?list=<id>
+                                                    └─ "Pick a song" ▶ ytm.py playlist <id> ▶ rofi ▶ watch?v=<id>
+│
         ▼
-   play_url(<url>, <título real>)
+   "Tocar agora" → play_url(<url>, <título real>)      "Adicionar à fila" → mpvctl load <url> append <título>
       │
-      ├── stop_music()  (mata mpv antigo, preserva mpvpaper; fecha letras)
-      ├── setsid mpv --no-video ... (socket IPC + force-media-title + PO token)
+      ├── spawn_mpv_idle()  (mpv --idle daemon, só se não estiver vivo)
+      ├── mpvctl load <url> replace   (loadfile — nunca mata o daemon)
+      ├── mpvctl title "<título>"     (media-title, sufixo (m:ss) removido)
       ├── open_panel()  (spawna hyprwave se ausente + bridge MPRIS + mostra painel)
       └── lyrics-panel-toggle open  (janela de letras junto)
 ```
@@ -135,7 +158,7 @@ SUPER SHIFT Y  (ou RofiBeats > "Play from YouTube Music 🎧")
 | `~/.config/hypr/UserScripts/RofiYtm.sh` | UI rofi + playback + orquestração dos painéis |
 | `~/.config/rofi/scripts/ytm/ytm.py` | helper ytmusicapi (search/liked/playlists/playlist) |
 | `~/.config/rofi/scripts/ytm/refresh_auth.py` | regenera `headers_auth.json` (cookies Firefox + SAPISIDHASH + seletor de conta) |
-| `~/.config/rofi/scripts/ytm/mpvctl.py` | cliente do socket JSON do mpv (`get/toggle/stop/vol/seek/next/prev/playlist/ping`) |
+| `~/.config/rofi/scripts/ytm/mpvctl.py` | cliente do socket JSON do mpv (`get/toggle/stop/vol/seek/next/prev/load/title/loop/shuffle/queue/play/clear/playlist/ping`) |
 | `~/.config/rofi/scripts/ytm/mpris_bridge.py` | player MPRIS `org.mpris.MediaPlayer2.ytm` (título real + artUrl + CanGoNext/Prev) |
 | `~/.config/rofi/scripts/ytm/lyrics_player.py` | karaokê ANSI (lê a bridge via D-Bus + lrclib.net) |
 | `~/.local/bin/hyprwave-panel-toggle` | mostra/esconde o painel (menu + `SUPER CTRL Y`) |
@@ -152,6 +175,7 @@ SUPER SHIFT Y  (ou RofiBeats > "Play from YouTube Music 🎧")
 | `~/.deno/bin/deno` | runtime JS do yt-dlp (assinaturas + PO token) |
 | `~/.local/bin/hyprwave` | painel "Now Playing" (build patched) |
 | `~/.config/hyprwave/config.conf` | config do hyprwave (`preference = ytm,mpv,spotify,vlc`) |
+| `~/.cache/rofi-ytm/` | caches persistentes (letras lrclib, meta do yt-dlp, flat-playlist) com TTL |
 
 ### Temporários (regenerados a cada listagem)
 
@@ -159,9 +183,12 @@ SUPER SHIFT Y  (ou RofiBeats > "Play from YouTube Music 🎧")
 |---|---|
 | `/tmp/ytm_songs.tsv` | `número_da_linha \t videoId/playlistId` |
 | `/tmp/ytm_songs.lines` | linhas exatas de exibição (título - artista (duração)) |
-| `/tmp/mpv-ytm.sock` | socket IPC do mpv |
+| `/tmp/mpv-ytm.sock` | socket IPC do mpv (daemon `--idle`) |
 | `/tmp/ytm_bridge.pid`, `/tmp/ytm_lyrics.pid` | pidfiles da bridge e do player de letras |
 | `/tmp/ytm_panel_hidden` | flag de estado manual (painel escondido) |
+| `/tmp/ytm_mpv.log` | log do daemon mpv (`--log-file`, substitui o `--no-terminal`) |
+| `/tmp/ytm_queue.tsv`, `/tmp/ytm_queue.lines` | fila do mpv exibida no rofi (submenu 🎛️) |
+| `/tmp/ytm_bridge_debug.log` | debug da bridge MPRIS (rotacionado em 1 MB) |
 
 O par TSV+LINES é a ponte entre a saída do Python e a seleção do rofi: o rofi
 exibe `LINES_FILE`, e a escolha é resolvida de volta ao ID via número de linha.

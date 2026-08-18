@@ -287,6 +287,7 @@ deploy_scripts() {
   local target
 
   mkdir -p "$ytm_dir"
+  mkdir -p "$HOME/.cache/rofi-ytm"
   install -m 755 "$SRC_DIR/ytm.py" "$ytm_dir/ytm.py"
   install -m 755 "$SRC_DIR/refresh_auth.py" "$ytm_dir/refresh_auth.py"
   sed -i "s|__FIREFOX_PROFILE__|$FIREFOX_PROFILE|g" "$ytm_dir/refresh_auth.py"
@@ -499,6 +500,7 @@ EOF
   rm -f "$HOME/.local/bin/hyprwave-panel-toggle"
   rm -f "$HOME/.local/bin/lyrics-panel-toggle"
   rm -f /tmp/mpv-ytm.sock /tmp/ytm_bridge.pid /tmp/ytm_panel_hidden /tmp/ytm_lyrics.pid
+  rm -rf "$HOME/.cache/rofi-ytm"
   pkill -f "ytm/mpris_bridge" 2>/dev/null || true
   pkill -f "[y]tm-lyrics" 2>/dev/null || true
   if [ -f "$CONFIG_DIR/hypr/configs/Keybinds.conf" ]; then

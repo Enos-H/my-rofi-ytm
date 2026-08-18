@@ -82,13 +82,25 @@ git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider ~/bg
 
 ## A combinação exata de flags (funciona 12/12)
 
+Desde a Fase "mpv daemon", o mpv roda uma **única vez** como daemon
+(`--idle`), e as faixas são trocadas por `loadfile` (`mpvctl load`):
+
 ```bash
 PATH="$HOME/.local/share/ytm-venv/bin:$HOME/.deno/bin:$PATH" \
-mpv --no-video --ytdl-format=bestaudio/best \
+mpv --idle --no-video --no-terminal --vo=null \
+  --ytdl-format=bestaudio/best \
   --ytdl-raw-options="extractor-args=youtube:player_client=web_music" \
   --ytdl-raw-options="remote-components=ejs:github" \
   --ytdl-raw-options="cookies-from-browser=firefox:$HOME/snap/firefox/common/.mozilla/firefox/2b11ppm1.default" \
-  'https://music.youtube.com/watch?v=<videoId>'
+  --input-ipc-server=/tmp/mpv-ytm.sock \
+  --log-file=/tmp/ytm_mpv.log
+```
+
+Depois, para tocar uma faixa (`play_url()`):
+
+```bash
+mpvctl load 'https://music.youtube.com/watch?v=<videoId>' replace   # loadfile
+mpvctl title 'Nome Real da Música'                                  # media-title
 ```
 
 | Flag | Função | Sem ela |
@@ -97,13 +109,33 @@ mpv --no-video --ytdl-format=bestaudio/best \
 | `player_client=web_music` | cliente certo para áudio | `web`: só imagens; default: 403 intermitente |
 | `remote-components=ejs:github` | baixa o solver JS de assinaturas | "Signature solving failed... only images" |
 | `cookies-from-browser=firefox:<perfil>` | sessão logada (playlists privadas, sem age-gate) | formatos `web_music` são pulados (storyboards) |
+| `--idle` | daemon persistente | cada faixa exigiria um novo mpv (kill + respawn + teardown dos painéis) |
+| `--vo=null` | evita o hang no teardown do wayland ao dar "Parar Música" (`quit`) | `quit` deixa o mpv pendurado em `S`, socket já removido (áudio não é afetado) |
+| `--log-file=/tmp/ytm_mpv.log` | diagnóstico do daemon | sem log nenhum (o antigo `--no-terminal` silenciava tudo) |
 
 Com essas opções o yt-dlp injeta `pot=` na URL e o CDN aceita: **100% de
 sucesso em 12/12** (6× "Boys Don't Cry" + 6× "Eu Sou Feliz"), sem precisar de
 retry.
 
+> O antigo `--force-media-title` (que só valia no boot do processo) foi
+> substituído por `mpvctl title <nome>` → `set_property force-media-title`.
+> Em mpv 0.41 `media-title` é read-only no IPC (erro ao setar), mas
+> `force-media-title` é uma opção setável que aplica na hora, até com faixa
+> carregada. O `mpvctl load` limpa a opção antes (`force-media-title ""`)
+> para o título de uma faixa não vazar para a próxima.
 > A escolha da flag `--ytdl-format=bestaudio/best` mantém o áudio preferido.
-> `--no-terminal` silencia; para depurar use `--msg-level=all=status` no lugar.
+
+## Daemon persistente e troca de faixa
+
+- O mpv sobe em `spawn_mpv_idle()` quando o primeiro `mpvctl ping` falha;
+- Trocar de faixa **não** mata o mpv: `mpvctl load <url> replace` faz
+  `loadfile` e a ponte/painel de letras apenas observam a nova metadata;
+- A fila usa o próprio playlist do mpv: `mpvctl load <url> append` enfileira
+  `append-play`; `loop/shuffle/queue/play` gerenciam loop-file/loop-playlist/
+  shuffle/playlist-pos;
+- Em falha do stream (403/stall no meio da faixa) a ponte religa a mesma URL
+  automaticamente (1x, backoff 2s) e notifica — antes era "música para; tocar
+  de novo na mão".
 
 ## Conta free (sem Premium): sem anúncios, 128 kbps
 

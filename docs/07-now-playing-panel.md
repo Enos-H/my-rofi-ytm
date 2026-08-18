@@ -7,12 +7,12 @@ controles play/pause/**próxima/anterior (em playlist)**, slider de
 volume e **visualizer de ondas** (espectro real via PulseAudio).
 
 ```
-RofiYtm.sh ──▶ mpv (--input-ipc-server=/tmp/mpv-ytm.sock
-                 --force-media-title="<título sem sufixo (m:ss)>")
-                  │ IPC JSON (unix socket)
+RofiYtm.sh ──▶ mpv daemon (--idle --input-ipc-server=/tmp/mpv-ytm.sock)
+                  │ mpvctl load <url> replace · mpvctl title "<título real>"
+                  │ IPC JSON (unix socket, conexão persistente + eventos)
                   │        ▲
-                  ▼        │ mpvctl.py (get/toggle/vol/seek/next/prev/playlist/ping)
-   mpris_bridge.py ────────┘
+                  ▼        │ mpvctl.py (get/load/title/toggle/vol/seek/next/prev/queue)
+   mpris_bridge.py ────────┘  (observe_property / property-change / end-file)
       │  D-Bus org.mpris.MediaPlayer2.ytm
       │    xesam:title real · mpris:artUrl (thumbnail https, hyprwave
       │    baixa sozinho) · Posição/Volume · CanGoNext/CanGoPrevious
@@ -28,10 +28,10 @@ configuração de metadata: ele não deixa trocar o título (fica
 `mpris:artUrl`, e o Next/Previous fica sempre desabilitado. A bridge
 resolve os três:
 
-1. **título real** — o launcher já passa o nome certo via
-   `--force-media-title` (com o sufixo de duração ` (m:ss)` removido);
-   a bridge ainda consulta o yt-dlp (título/artista) quando o título do
-   mpv estiver vazio;
+1. **título real** — o launcher aplica o nome certo via `mpvctl title`
+   (`set_property media-title`, com o sufixo de duração ` (m:ss)` removido);
+   a bridge o semeia imediatamente no `xesam:title` e ainda consulta o
+   yt-dlp (artista) quando faltar alguma coisa;
 2. **thumbnail** — a bridge roda `yt-dlp -J` na watch URL da faixa
    atual (1x por id, cache em memória), pega a *maior* thumbnail e a
    expõe como `mpris:artUrl` (URL `https://` — o hyprwave baixa e
@@ -65,8 +65,8 @@ real (via `yt-dlp`/flat-playlist) é exibido.
 
 | Arquivo | Função |
 |---|---|
-| `mpvctl.py` | cliente do socket JSON do mpv (somente stdlib; `get`, `toggle`, `stop`, `vol ±N/N`, `seek S`, `next`, `prev`, `playlist`, `ping`) |
-| `mpris_bridge.py` | player MPRIS2 `org.mpris.MediaPlayer2.ytm` (dbus-next no venv): poll 0.5s no `mpvctl get`, `emit_properties_changed`, métodos Play/Pause/PlayPause/Stop/Next/Previous/Seek/SetPosition; morre sozinho quando o mpv morre; pidfile `/tmp/ytm_bridge.pid` |
+| `mpvctl.py` | cliente do socket JSON do mpv (somente stdlib; `get`, `toggle`, `stop`, `vol ±N/N`, `seek S`, `next`, `prev`, `load`, `title`, `loop`, `shuffle`, `queue`, `play`, `clear`, `playlist`, `ping`) |
+| `mpris_bridge.py` | player MPRIS2 `org.mpris.MediaPlayer2.ytm` (dbus-next no venv): **conexão persistente** ao socket do mpv com `observe_property` + eventos (`property-change`/`end-file`/`playback-restart`/`seek`) e poll de `time-pos` a cada 1s na mesma conexão; `emit_properties_changed`; métodos Play/Pause/PlayPause/Stop/Next/Previous/Seek/SetPosition; tenta reconectar por até ~2 min se o daemon reiniciar; retry automático em falha de stream (1x); caches em `~/.cache/rofi-ytm/`; pidfile `/tmp/ytm_bridge.pid` |
 | `src/hyprwave/config.conf` | modelo do `~/.config/hyprwave/config.conf` (gerado na instalação; o existente **não** é sobrescrito) — `preference = ytm,mpv,spotify,vlc` |
 
 Dependência Python: `dbus-next` (instalado no venv pelo `install.sh`).
@@ -112,13 +112,17 @@ sinais.)
 
 ## Comportamento no rofi-ytm
 
-- Tocar música → mpv sobe com socket + título real; painel abre
-  (spawna o hyprwave se não estiver rodando); a bridge MPRIS é
+- Primeira música → mpv sobe como **daemon** (`--idle`) com socket;
+  painel abre (spawna o hyprwave se não estiver rodando); a bridge MPRIS é
   spawnada se não estiver viva; `hyprwave-toggle visibility`.
-- Parar (stop) → mpv morre (sua bridge sai junto); **o hyprwave fica
-  aberto no visualizer idle** (não é fechado de propósito).
-- Menu "🎧 Now Playing" → `mpvctl.py ping`; se o mpv estiver vivo,
-  reabre o painel ("Nada tocando no momento" caso contrário).
+- Tocar outra faixa → `mpvctl load <url> replace` — o daemon **não morre**;
+  a bridge só vê a metadata mudar (e o painel não pisca).
+- Parar (stop) → `mpvctl stop` (quit graceful); o daemon encerra e a bridge
+  sai; **o hyprwave fica aberto no visualizer idle** (não é fechado de
+  propósito).
+- Não há mais a entrada de menu "🎧 Now Playing": o painel abre sozinho ao
+  tocar (`open_panel()`), e para mostrá-lo/escondê-lo manualmente use
+  `👁️ Mostrar/Esconder Painel` ou `SUPER + CTRL + Y`.
 - Volume/play/seek também funcionam por qualquer cliente MPRIS
   (`playerctl -p ytm position 30`, teclas do Hyprland, etc.).
 
@@ -146,7 +150,7 @@ independente de o painel estar oculto.
 | Sintoma | Causa / correção |
 |---|---|
 | Painel não abre ao tocar | hyprwave não instalado (`command -v hyprwave`) → `install.sh --hyprwave` |
-| Painel mostra "Youtube Music" em vez do nome | título do mpv veio vazio — no launcher, `choice` é capturado por `pick_from_helper` via `$(...)` (subshell) e `play_url` usa o título passado como 2º argumento (`play_url <url> "$song_title"`); conferir `--force-media-title` no mpv. A bridge resolve o nome real mesmo assim (via `yt-dlp`/flat-playlist) |
+| Painel mostra "Youtube Music" em vez do nome | título chegou vazio à bridge — no launcher, `choice` é capturado por `pick_from_helper` via `$(...)` (subshell) e `play_url` aplica o título via `mpvctl title`; conferir que a bridge semeia o `media-title`. A bridge resolve o nome real mesmo assim (via `yt-dlp`/flat-playlist) |
 | Painel mostra o título do mpv nativo, não o da bridge | hyprwave conectou no MPRIS nativo do mpv antes de a bridge nascer → precisa do patch `hyprwave-reconnect.patch` aplicado no build (reinstalar com `install.sh --hyprwave`); validar: `grep -E "preferred player" ~/.config/.../hyprwave.log` mostra `ytm` e não `mpv` |
 | Painel sem thumbnail | a bridge não resolveu a art: testar na mão `yt-dlp -J "https://music.youtube.com/watch?v=<id>"` com o venv (deve listar `thumbnails`) e conferir se a bridge está viva (`pgrep -f ytm/mpris_bridge`) |
 | Botões próxima/anterior desabilitados | faixa única (sem playlist) = correto; se **em playlist**: conferir que tocou a URL `.../playlist?list=...` (não a watch), `mpvctl playlist` deve mostrar `count > 1`, e `playerctl -p ytm metadata` deve ter `xesam:title` mudando no next |

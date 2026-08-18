@@ -224,6 +224,38 @@ gtk4 4.22.4, libgtk4-layer-shell 1.3.0, node 22.22.1, PipeWire proto 35);
 docs únicos e profundos por parte (03 auth, 04 playback, 07 painel, 08
 letras); 05 troubleshooting por área; 06 history com este histórico.
 
+## Fase 12 — mpv daemon persistente + bridge por eventos
+
+O usuário pediu melhorias de fluxo ("alguma sugestão para melhoria do fluxo?")
+e aprovou 6 frentes (`"prossiga com a implementação de tudo"`):
+
+1. **mpv daemon** — antes cada faixa era `kill -9` + novo `setsid mpv` +
+   teardown/re-spawn de bridge e letras (flicker por música). Agora o mpv
+   sobe **uma vez** com `--idle` e a troca é `loadfile` (`mpvctl load
+   <url> replace`); o título é aplicado via `mpvctl title` →
+   `media-title` (o `--force-media-title` só valia no boot); a **fila usa
+   o playlist do mpv** (`append-play`), com loop/shuffle/ver-fila no menu;
+2. **Bridge por eventos** — eliminado o spawn de `mpvctl.py get` a cada
+   0.5s: conexão persistente + `observe_property` + eventos
+   `property-change`/`end-file`/`playback-restart`/`seek`; única poll é
+   `time-pos`/`duration` a cada 1s na mesma conexão;
+3. **Metadata instantânea** — seed do título a partir do `media-title` do
+   mpv (o yt-dlp `-J` ficou para background só quando faltar title/artist);
+4. **Caches persistentes** — `~/.cache/rofi-ytm/` (meta por vid TTL 7d,
+   flat-playlist por list_id TTL 24h, letras do lrclib TTL 7d);
+5. **QoL** — stop graceful (quit + fallback kill), **retry automático** de
+   stream com falha (1x, backoff 2s), logs do daemon em `/tmp/ytm_mpv.log`
+   e debug rotativo da bridge em 1 MB;
+6. **Menu novo** — `🎛️ Fila e Reprodução` (tocar a seguir / loop / shuffle /
+   ver fila) e `⏹ Parar Música` no menu principal (9 entradas).
+
+- **Pontos de atenção da implementação**: `time-pos` não tem evento no
+  protocolo JSON do mpv (poll 1s na conexão persistente); o `ping` virou
+  `get_property filename` (exit 1 quando o daemon está ocioso sem faixa);
+  os request_ids 50/51 separam o poll do dispatcher de eventos; a bridge
+  só emite `Seeked` quando há `event: seek` pendente; a dedupe de spawn
+  do daemon depende do `ping` — nunca reintroduzir `pause`.
+
 ---
 
 ## Lições gerais (para não repetir)
@@ -231,8 +263,8 @@ letras); 05 troubleshooting por área; 06 history com este histórico.
 1. **Nunca** `pkill -f` com padrão presente na própria linha de comando do
    shell (mata o shell). Use `pkill -x mpv` / `pgrep -x` / `[p]attern`.
 2. Ao refatorar `ytm.py`, verifique o guard `if __name__ == "__main__": main()`.
-3. `mpv --no-terminal` suprime o log inteiro — para depurar use
-   `--msg-level=all=status`.
+3. `mpv --no-terminal` suprime o log inteiro — o daemon usa
+   `--log-file=/tmp/ytm_mpv.log`; para verbosidade use `--msg-level=all=status`.
 4. `grep -nFx` (literal + linha inteira) para casar a escolha do rofi com o
    arquivo de linhas (acentos/emoji seguros).
 5. Plugins pip do yt-dlp só valem para o yt-dlp **daquele Python** (venv).
@@ -242,7 +274,8 @@ letras); 05 troubleshooting por área; 06 history com este histórico.
 8. cava `data_format=ascii` separa valores por `;`, não espaço.
 9. Propriedades de arquivo do mpv (time-pos/duration/media-title) só
    respondem após o buffer do yt-dlp; propriedades de opção (pause/volume)
-   sempre — `ping` usa `pause`.
+   sempre. `time-pos` **não emite evento** — poll na conexão persistente;
+   `ping` = `get_property filename` (exit 1 se o daemon estiver vivo sem faixa).
 10. dbus-next: `dbus_property` (não `property_`), getters com nome exato da
     propriedade, retorno raw (Variant re-embrulhado), `MessageType` enum.
 11. `zsh` expande `echo ===` (use `printf`); comandos longos com `setsid &`

@@ -17,6 +17,7 @@ import os
 import re
 import signal as _signal
 import sys
+import time
 import urllib.parse
 import urllib.request
 
@@ -48,6 +49,7 @@ PROPS_IFACE = "org.freedesktop.DBus.Properties"
 POLL = 0.2
 GONE_LIMIT = 20     # ~4s sem o player no bus -> sair (janela fecha)
 BUFFER_LIMIT = 25   # ~5s sem metadata valida -> sair
+STOPPED_LIMIT = 15  # ~3s de PlaybackStatus Stopped -> sair (absorve a transicao entre faixas)
 
 LRCLIB = "https://lrclib.net/api"
 UA = "rofi-ytm/1.0 (lyrics)"
@@ -57,8 +59,38 @@ _DUR_RE = re.compile(r"\s+\(\d+:\d{1,2}\)$")
 _LRC_TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
 _ID_RE = re.compile(r"/ytm/([0-9A-Za-z_-]{11})")
 
-CACHE = {}           # trackid -> {"kind": lrc|plain|none|instrumental, "data": [...]}
+CACHE = {}           # "trackid|title|artist" -> {"kind": lrc|plain|none|instrumental, "data": [...], "ts": ...}
 last_drawn = -1
+
+# Cache persistente em disco (Fase 4): a mesma faixa não re-busca o lrclib
+# a cada reprodução. TTL de 7 dias; diretório compartilhado com a bridge.
+CACHE_TTL = 7 * 24 * 3600
+CACHE_FILE = os.path.join(
+    os.path.expanduser(os.environ.get("YTM_CACHE_DIR", "~/.cache/rofi-ytm")),
+    "lyrics.json")
+
+
+def load_cache():
+    try:
+        with open(CACHE_FILE) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return
+    now = time.time()
+    for k, v in data.items():
+        if now - (v.get("ts") or 0) < CACHE_TTL:
+            CACHE[k] = v
+
+
+def save_cache():
+    try:
+        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+        tmp = CACHE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(CACHE, f)
+        os.replace(tmp, CACHE_FILE)
+    except OSError:
+        pass
 
 
 # -------------------------- terminal helpers --------------------------
@@ -218,12 +250,15 @@ def fetch_lyrics(title, artist):
 
 
 def get_lyrics(tid, title, artist, dur):
-    if tid in CACHE:
-        return CACHE[tid]
+    key = f"{tid}|{title}|{artist}"
+    if key in CACHE:
+        return CACHE[key]
     result = fetch_lyrics(title, artist)
     if result["kind"] == "plain":
         result["data"] = distribute_plain(result["data"], dur)
-    CACHE[tid] = result
+    result["ts"] = time.time()
+    CACHE[key] = result
+    save_cache()
     return result
 
 
@@ -269,6 +304,7 @@ def read_state(props):
 
 async def main_loop():
     global last_drawn
+    load_cache()
     bus = await MessageBus().connect()
 
     owner = YT_PLAYER
@@ -292,6 +328,7 @@ async def main_loop():
 
     gone = 0
     buffering = 0
+    stopped_hits = 0
     known_tid = ""
     last_drawn = -1
     prev_size = (terminal_width, terminal_height)
@@ -313,7 +350,12 @@ async def main_loop():
 
         st = read_state(props)
         if st["status"] == "Stopped":
-            break
+            stopped_hits += 1
+            if stopped_hits >= STOPPED_LIMIT:
+                break
+            await asyncio.sleep(POLL)
+            continue
+        stopped_hits = 0
 
         if not st["title"]:
             buffering += 1

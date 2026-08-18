@@ -32,14 +32,18 @@ letras [`08-lyrics-panel.md`](08-lyrics-panel.md).
 | Música toca, mas "only images" no `-F` | Cliente `web` (default) | Usar `player_client=web_music` |
 | Erro ao tocar playlist privada | mpv sem cookies da conta | `cookies-from-browser=firefox:<perfil>` em `play_url()` |
 | `Database is locked` (Firefox) | yt-dlp lendo cookies.sqlite com o Firefox aberto | Em geral o snap profile funciona com o Firefox aberto; se ocorrer: fechar o Firefox, ou exportar `cookies.txt` e usar `--cookies <arquivo>` |
-| mpv morre no meio da música (stall do stream `web_music`) | comportamento conhecido do ambiente | A música para e a bridge/letras saem (design); tocar de novo. O hyprwave fica no idle |
+| Música para no meio por erro do stream (403/stall `web_music`) | comportamento conhecido do ambiente | A ponte **religa automaticamente** a mesma faixa (1x, backoff 2s) e notifica "Conexão do stream falhou"; se parar de novo, tocar manualmente |
+| mpv fica ocioso mas o menu diz "Nada tocando" | daemon `--idle` vivo sem faixa (comportamento esperado do `ping` idle-aware) | Tocar uma música; o painel reabre sozinho |
+| 🎛️ "Adicionar à fila" avisa que o mpv não está rodando | nenhuma faixa tocando ainda (a fila pertence ao daemon) | Toque uma faixa primeiro e depois enfileire |
+| Painel sem título no 1º segundo da faixa | ponte semeia o título do `media-title`; se ele vier vazio, consulta o yt-dlp em background | normal; o título aparece em ~1s; se persistir, ver `/tmp/ytm_bridge_debug.log` |
+| "Parar Música" deixa o mpv vivo/pendurado (`ps` mostra mpv em `S`, socket sumiu) | teardown do wayland trava o `quit` | O spawn usa `--vo=null` justamente para evitar isso; atualize o `RofiYtm.sh` deployado (re-`install.sh`) |
 
 ## Painel "Now Playing" (Hyprwave)
 
 | Sintoma | Causa provável | Correção |
 |---|---|---|
 | Painel não abre ao tocar | hyprwave não instalado | `command -v hyprwave` → `install.sh --hyprwave` |
-| Painel mostra "Youtube Music" em vez do nome | título do mpv veio vazio (choice via subshell) | `play_url <url> "$song_title"` (2º arg); a bridge resolve o nome real via yt-dlp mesmo assim |
+| Painel mostra "Youtube Music" em vez do nome | título chegou vazio à bridge (media-title não foi aplicado) | `play_url <url> "$song_title"` (2º arg) → `mpvctl title`; a bridge resolve o nome real via yt-dlp mesmo assim |
 | Painel mostra título do mpv nativo, não o da bridge | hyprwave conectou no MPRIS nativo antes da bridge nascer | Precisa do `hyprwave-reconnect.patch` no build (reinstalar `install.sh --hyprwave`); validar no log: `grep -E "preferred player"` mostra `ytm` |
 | Painel sem thumbnail | bridge não resolveu a art | Testar `yt-dlp -J "<watch url>"` no venv; bridge viva? (`pgrep -f ytm/mpris_bridge`) |
 | Botões próxima/anterior desabilitados | faixa única = correto; **em playlist**: URL deve ser `playlist?list=...` | `mpvctl playlist` → `count > 1`; `playerctl -p ytm metadata` muda no next |
@@ -66,7 +70,10 @@ letras [`08-lyrics-panel.md`](08-lyrics-panel.md).
 ## Depuração (comandos)
 
 ```bash
-# 1. Log do mpv com verbosidade (sem --no-terminal)
+# 1. Log do daemon mpv (sempre ligado via --log-file)
+tail -f /tmp/ytm_mpv.log
+
+# 1b. Diagnóstico do mpv isolado (verboso, sem daemon)
 mpv --msg-level=all=status --no-video \
   --ytdl-raw-options="extractor-args=youtube:player_client=web_music" \
   --ytdl-raw-options="remote-components=ejs:github" \
@@ -83,6 +90,12 @@ mpv --msg-level=all=status --no-video \
   --cookies-from-browser "firefox:$HOME/snap/firefox/common/.mozilla/firefox/2b11ppm1.default" \
   'https://music.youtube.com/watch?v=<videoId>'
 #  -> URL válida contém "pot="; se não tiver, o provider não está ativo
+
+# 3b. Estado do daemon / fila
+~/.config/rofi/scripts/ytm/mpvctl.py get        # JSON completo
+~/.config/rofi/scripts/ytm/mpvctl.py queue      # fila do mpv
+~/.config/rofi/scripts/ytm/mpvctl.py playlist   # {count, pos}
+tail -f /tmp/ytm_bridge_debug.log               # debug da ponte (rotativo 1 MB)
 
 # 4. Auth manual (sempre com o python do venv)
 ~/.local/share/ytm-venv/bin/python ~/.config/rofi/scripts/ytm/refresh_auth.py
