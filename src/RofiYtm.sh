@@ -104,6 +104,20 @@ open_panel() {
 # painel de letras NAO morrem mais entre faixas (fim do kill+restart).
 # --vo=null evita o hang no teardown do wayland ao dar quit (Parar Musica).
 spawn_mpv_idle() {
+  # Daemon ja respondendo: reusa (instancia unica). O ping confirma que o
+  # mpv esta vivo no socket, mesmo sem faixa carregada.
+  if "$PYTHON" "$MPVCTL" ping >/dev/null 2>&1; then
+    return 0
+  fi
+  # Mata daemons antigos (de spawns anteriores que ficaram para tras) para
+  # nao sobrar mpv velho segurando o socket: a bridge MPRIS reconecta ao
+  # novo sozinha quando a conexao do antigo cai.
+  for pid in $(pgrep -x mpv 2>/dev/null || true); do
+    mpvpaper_pid=$(ps aux | grep -- 'unique-wallpaper-process' | grep -v 'grep' | awk '{print $2}')
+    if ! echo "$mpvpaper_pid" | grep -q "$pid"; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
+    fi
+  done
   rm -f "$MPV_SOCKET"
   setsid env PATH="__VENV_DIR__/bin:__DENO_DIR__/bin:$PATH" mpv --idle --no-video --no-terminal --vo=null \
     --ytdl-format=bestaudio/best \

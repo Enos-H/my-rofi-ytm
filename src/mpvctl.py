@@ -381,11 +381,11 @@ def main():
             except MpvError:
                 print(json.dumps({"count": 0, "pos": -1}))
         elif op == "ping":
-            resp = request([{"command": ["get_property", "filename"],
-                             "request_id": 1}])
-            val = result(resp, 1)
-            if val in (None, "", "null", "none"):
-                return 1  # daemon --idle vivo, mas sem faixa carregada
+            # Daemon respondeu no socket = utilizavel (mesmo ocioso, sem
+            # faixa carregada): o loadfile funciona em cima do --idle. Evita
+            # spawnar um mpv novo com o daemon vivo (instancia unica).
+            request([{"command": ["get_property", "filename"],
+                      "request_id": 1}])
         else:
             print(f"unknown command: {op}", file=sys.stderr)
             return 2
